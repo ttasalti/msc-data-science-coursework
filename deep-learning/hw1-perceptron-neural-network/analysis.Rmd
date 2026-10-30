@@ -1,0 +1,476 @@
+---
+title: "DSM 5014 DERİN ÖĞRENME YÖNTEMLERİ VE UYGULAMALARI  1.ÖDEV"
+author: |
+  Büşra Sulak, Mustafa Öngün, Tarık Tuna Taşaltı
+date: "`2024/11/21`"
+documentclass: ctexart
+output: 
+  rticles::ctex:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+lang: "tr"
+---
+
+
+# 1. PERCEPTRON : İKİ ÖZELLİKLİ ALGILAYICI
+## 1.1 Eğitim Veri Setini Yaratma
+
+Algılayıcı eğitmek için eşit sayıda veriye sahip **1 ve -1 etiketli** uniform dağılan rastgele değerlerden oluşan iki grup oluşturulmuştur. 
+
+- 1 etiketli grubun her bir veri noktasının (x,y) koordinatları 0 ile 1 arasındadır.
+
+- -1 etiketli grubun ise (x1, 1 + x1) ile (y1, 1 + y1) arasındadır.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+set.seed(255) 
+N <- 100 
+x1 <- 1 
+y1 <- 1 
+
+etiket_1 <- data.frame( 
+  x = runif(N, 0, 1), 
+  y = runif(N, 0, 1), 
+  etiket = 1 
+  ) 
+etiket_eksi_1 <- data.frame( 
+  x = runif(N, x1, 1 + x1), 
+  y = runif(N, y1, 1 + y1), 
+  etiket = -1 
+  ) 
+data_total <- rbind(etiket_1, etiket_eksi_1)
+```
+
+### 1.1.1 Veri Seti Dağılım Grafiği
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(ggplot2)
+ggplot(data_total, aes(x = x, y = y)) + 
+  geom_point(aes(colour = as.factor(etiket)), size = 3) + 
+  xlab("x") + ylab("y") + 
+  ggtitle("Figur 1. Grup 1 vs Grup -1") 
+
+X <- data_total[, c(1, 2)] 
+Y <- data_total[, 3] 
+head(X) 
+head(Y)
+
+```
+
+İki grubun da doğrusal olarak ayrıldığı Figür 1'de görülmektedir.
+
+## 1.2 Algılayıcı Model Oluşturma
+
+Model için çalıştırılacak maksimum dönem sayısı, öğrenme oranı ve doğruluk eşiği parametreleri tanımlanmıştır.
+
+Ardından perceptron fonksiyonu oluşturulmuştur. Burada her dönemde veriler karıştırılarak tek tek değerlendirilir. Her dönem sonunda doğruluk değeri hesaplanır ve belirlenen eşik değerden büyük ya da eşit değil ise döngü devam eder, eşit ise eğitim durur ve sonraki dönem için hesaplama yapılmaz.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+max_epochs <- 1000 
+learning_rate <- 0.01 
+accuracy_threshold <- 0.95 
+
+# Perceptron Fonksiyonu
+perceptron <- function(X, Y, learning_rate, max_epochs, accuracy_threshold) {
+  weights <- rep(0, ncol(X) + 1) # Ağırlıkları başlat 
+  errors <- rep(0, max_epochs) # Hata sayısını saklamak için vektör
+  data_total <- data.frame(X, Y) # Veri setini bir kez oluşturur
+   for (epoch in 1:max_epochs) {
+     data_total <- data_total[sample(1:nrow(data_total)), ]
+    epoch_errors <- 0  # Bu epoch'taki hataları saymak için 
+    for (ii in 1:nrow(data_total)) { 
+      z <- sum(weights[2:length(weights)] *
+                 as.numeric(data_total[ii, 1:ncol(X)])) +
+        weights[1] 
+      if (z >= 0) {
+        Y_pred <- 1
+      } else {
+          Y_pred <- -1
+      }
+      weightdiff <- learning_rate *
+        (data_total[ii, ncol(data_total)] - Y_pred) *
+        c(1, as.numeric(data_total[ii, 1:ncol(X)]))
+      weights <- weights + weightdiff 
+      if ((data_total[ii, ncol(data_total)] - Y_pred) != 0) {
+        epoch_errors <- epoch_errors + 1
+      }
+    }
+    errors[epoch] <- epoch_errors # Bu epoch'taki hataları kaydet 
+    accuracy <- calculate_accuracy(X, Y, weights) 
+    print(paste("Epoch:", epoch, "Errors:", epoch_errors, "Accuracy:", accuracy)) 
+    if (accuracy >= accuracy_threshold) { 
+      print("Dogruluk esigine ulasıldı, egitimi durdur.") 
+      break
+    } 
+  } 
+  return(list(weights = weights, errors = errors)) 
+} 
+```
+
+Perceptron fonksiyonu oluşturulduktan sonra tahmin değerleri hesaplandı.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Tahmin Fonksiyonu
+
+predict_perceptron <- function(X, weights) { 
+  predictions <- numeric(nrow(X)) 
+  for (i in 1:nrow(X)) { 
+    z <- sum(weights[2:length(weights)] * as.numeric(X[i, ])) + weights[1] 
+    if (z >= 0) { 
+      predictions[i] <- 1 
+    } else { 
+        predictions[i] <- -1 
+    } 
+  } 
+  return(predictions) 
+} 
+
+```
+
+Tahminleri elde ettikten sonra algılayıcının doğruluğu hesaplandı.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Doğruluk hesaplama 
+calculate_accuracy <- function(X, Y, weights) { 
+  predictions <- predict_perceptron(X, weights) 
+  correct_predictions <- sum(predictions == Y) 
+  accuracy <- correct_predictions / length(Y) 
+  return(accuracy) 
+}
+
+# Perceptron modelini çalıştır 
+result <- perceptron(X, Y, learning_rate, max_epochs, accuracy_threshold) 
+final_weights <- result$weights 
+errors <- result$errors 
+print(final_weights)
+
+# Final Doğruluğu hesapla 
+accuracy <- calculate_accuracy(X, Y, final_weights) 
+print(paste("Model Dogrulugu:", accuracy))
+```
+
+## 1.3 Eğitilmiş Modelin Görselleştirmesi
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+intercept <- -final_weights[1] / final_weights[3] 
+slope <- -final_weights[2] / final_weights[3] 
+ggplot(data_total, aes(x = x, y = y)) + 
+  geom_point(aes(colour = as.factor(etiket)), size = 3) + 
+  geom_abline(intercept = intercept, slope = slope, linetype = "dashed", color = "red") + 
+  xlab("x") + ylab("y") + 
+  ggtitle("Figur 2. Grup 1 vs Grup -1 ve Eğitilmiş")
+
+```
+
+Figür 2'den görüldüğü üzere eğitilmiş model doğrusal olarak ayrılmıştır.
+
+# GİRİŞ
+
+Bu veri seti, endüstriyel üretim ortamlarında, çeşitli makinelerden alınan gerçek zamanlı sensör verilerini kullanarak makine arıza riskini tahmin etmek için tasarlanmıştır. Veri seti, operasyonun farklı zaman aralıklarını temsil eden 1.000 örnek içermektedir. Her örnek, makine sağlığını izleme ve öngörücü bakım açısından önemli olan temel sensör ölçümlerini içermektedir.
+
+## Veri Seti Kaynağı ve Linki
+
+- **Kaynak:** Kaggle  
+- **Veri Seti Linki:** [Machine Failure Classification using sensor data](https://www.kaggle.com/datasets/mujtabamatin/dataset-for-machine-failure-detection)
+
+## Veri Seti Değişkenleri
+
+- **Temperature (°C)**: Makinenin kritik noktalarındaki sıcaklığı temsil eden sürekli bir değişken. Yüksek sıcaklıklar, aşırı ısınma nedeniyle potansiyel sorunları gösterebilir.
+- **Vibration (Hz)**: Makine titreşimlerinin frekansı. Anormal titreşimler, mekanik hizasızlık, dengesizlik veya aşınma gibi sorunlara işaret edebilir.
+- **Power Usage (kW)**: Makinenin güç tüketim seviyeleri. Güç tüketimindeki ani artışlar, artan yük veya potansiyel mekanik sorunları gösterebilir.
+- **Humidity (%)**: Makine etrafındaki çevresel nem oranı. Yüksek nem seviyeleri, zamanla makine performansını etkileyebilir ve arızaya neden olabilir.
+- **Machine Type**: Makine türünü belirten kategorik bir değişken (örneğin, "Drill", "Lathe", "Mill"). Farklı makine türleri, kendilerine özgü arıza modellerine sahip olabilir.
+
+## Hedef
+
+- **Failure Risk**: İkili bir etiket olup, `0` normal operasyonu, `1` ise makinenin arıza riski altında olduğunu gösterir.
+
+
+# BETİMLEYİCİ İSTATİSTİKLER 
+```{r message=FALSE, warning=FALSE, include=FALSE}
+getwd()
+data <- read.csv("machine_failure_dataset.csv", row.names = NULL)
+
+nrow(data)
+summary(data)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(corrplot)
+library(GGally)
+
+
+# Sadece sayısal sütunları seçme
+numerical_data <- data %>% select(where(is.numeric))
+numerical_data <- numerical_data %>% select(-c("Failure_Risk"))
+
+
+```
+## Sayısal Değişkenler
+
+### Korelasyon Tablosu
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Korelasyon katsayısını gösteren ve pasta grafiği oluşturan özel fonksiyon
+pie_cor <- function(data, mapping, ...) {
+  # İlgili iki değişkenin adını al
+  x <- eval_data_col(data, mapping$x)
+  y <- eval_data_col(data, mapping$y)
+  
+  # Korelasyon hesapla
+  cor_value <- round(cor(x, y, use = "complete.obs"), 2)
+  
+  # Pasta grafiği için veri hazırla (pozitif ve negatif korelasyon için iki parça)
+  pie_data <- data.frame(
+    category = c("Correlation", "Remaining"),
+    value = c(abs(cor_value), 1 - abs(cor_value))
+  )
+  
+  # Özel renk paleti: -1 kırmızı, 0 mor, +1 mavi
+  color_palette <- colorRampPalette(c("red", "purple", "blue"))(100)
+  cor_color <- color_palette[round((cor_value + 1) * 50)]
+  
+  # Korelasyon pozitif mi negatif mi?
+  cor_fill_color <- ifelse(cor_value >= 0, "skyblue", "red")
+  
+  # Pasta grafiği oluştur
+  ggplot(pie_data, aes(x = "", y = value, fill = category)) +
+    geom_bar(stat = "identity", width = 1, color = "white") +
+    coord_polar("y") +
+    # Korelasyon katsayısını siyah çerçeveli renkli metinle göster
+    geom_text(aes(label = ifelse(category == "Correlation", cor_value, "")), 
+              x = 1, y = 0.5, size = 5, color = cor_color, fontface = "bold") +
+    scale_fill_manual(values = c("Correlation" = cor_fill_color, "Remaining" = "grey80")) +
+    theme_void() +
+    theme(legend.position = "none")
+}
+
+# ggpairs ile korelasyon matrisi oluşturma
+ggpairs(numerical_data,
+        upper = list(continuous = wrap(pie_cor)),  # Üst üçgende özel pasta grafikli korelasyon
+        lower = list(continuous = wrap("points", color = "blue", alpha = 0.6)),  # Alt üçgende scatter plot mavi
+        diag = list(continuous = wrap("barDiag", fill = "lightblue", color = "darkblue")))  # Diyagonal histogramlar
+
+```
+Veri seti incelendiğinde:
+
+* Sayısal değişkenler arasında istatistiksel olarak anlamlı bir doğrusal ilişki olmadığı tespit edilmiştir. Korelasyon katsayıları -0.05 ile 0.02 arasında değişmekte olup, bu değerler herhangi bir güçlü veya orta düzeyde doğrusal ilişki olmadığını göstermektedir. 
+* Değişkenlerin dağılımlarının, görsel incelemelere dayalı olarak simetriğe yakın bir yapıda olduğu gözlemlenmiştir.
+
+### Boxplot
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(numerical_data %>%
+         pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value"),
+       aes(x = Variable, y = Value, fill = Variable)) +
+  geom_boxplot(color = "darkblue", outlier.color = "red", outlier.shape = 1) +
+  theme_minimal() +
+  scale_y_continuous(breaks = seq(0, 110, by = 10)) +
+  labs(title = "Boxplots",
+       x = "Variables",
+       y = "Values") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +
+  coord_flip() 
+```
+- `Power_Usage` daha dar aralıkta değerler alırken, `Temperature` en geniş aralıkta değer alan değişken olmuştur.
+- Bütün değişkenler, hem alt sınırdan hem de üst sınırdan çeşitli outlier gözlemler barındırmaktadır.
+
+## Kategorik Değişkenler
+
+### Kategorik Değişkenlerin Frekans Grafiği
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data %>%
+  select(Machine_Type, Failure_Risk) %>%
+  mutate(Failure_Risk = as.factor(Failure_Risk)) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Category") %>%
+  ggplot(aes(x = Category)) +
+  geom_bar(fill = "skyblue", color = "darkblue") +
+  facet_wrap(~Variable, scales = "free_x") +
+  scale_y_continuous(breaks = seq(0, 800, by = 100)) + # Y ekseni 100'er artacak şekilde ayarlanır
+  theme_minimal() +
+  labs(title = "Frequency Plots of Categorical Variables",
+       x = "Categories",
+       y = "Frequency") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+- Hedef değişken olan `Failure_Risk`, yaklaşık olarak 300 ve 700 frekans değerlerine sahip iki farklı kategoriye ayrılmaktadır. Bu durum, hedef değişkenin dengesiz bir dağılım gösterdiğini ve sınıf dengesizliği problemi içerdiğini ortaya koymaktadır.
+- `Machine_Type` bağımsız değişkeni, üç homojen kategoriye ayrılmakta ve her bir kategori yaklaşık 300 gözlem içermektedir.
+
+# TEK PERCEPTRONLA OLUŞTURULAN MODEL
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+Sys.setlocale("LC_ALL", "tr_TR.UTF-8")
+library(fastDummies)
+df <- read.csv("machine_failure_dataset.csv")
+df <- dummy_cols(df, select_columns = "Machine_Type", remove_first_dummy = FALSE, remove_selected_columns = TRUE)
+X <- df[,-5]
+Y <- ifelse(df[,5] > 0, 1, -1)
+```
+Verinin bağımlı değişkeni olan Failure Risk Y değişkenine, kalan bağımsız değişkenler X değişkenine atandı. Y değişkeni sınıflandırma algoritmasının daha iyi sonuç vermesi için 1 ve -1 değerlerine dönüştürüldü.
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+perceptron <- function(X, Y, learning_rate, max_epochs, accuracy_threshold) {
+  weights <- rep(0, ncol(X) + 1)
+  errors <- rep(0, max_epochs)
+  data_total <- data.frame(X, Y)
+  for (epoch in 1:max_epochs) {
+    data_total <- data_total[sample(1:nrow(data_total)), ]
+    epoch_errors <- 0 
+    for (ii in 1:nrow(data_total)) { 
+      z <- sum(weights[2:length(weights)] * 
+                 as.numeric(data_total[ii, 1:ncol(X)])) + weights[1] 
+      if (z >= 0) {
+        Y_pred <- 1
+      } else {
+        Y_pred <- -1
+      }
+      weightdiff <- learning_rate * 
+        (data_total[ii, ncol(data_total)] - Y_pred) * 
+        c(1, as.numeric(data_total[ii, 1:ncol(X)]))
+      weights <- weights + weightdiff 
+      if ((data_total[ii, ncol(data_total)] - Y_pred) != 0) {
+        epoch_errors <- epoch_errors + 1
+      }
+    }
+    errors[epoch] <- epoch_errors  
+    accuracy <- calculate_accuracy(X, Y, weights) 
+    print(paste("Epoch:", epoch, "Errors:", epoch_errors, "Accuracy:", accuracy)) 
+  } 
+  return(list(weights = weights, errors = errors))
+} 
+
+
+predict_perceptron <- function(X, weights) { 
+  predictions <- numeric(nrow(X)) 
+  for (i in 1:nrow(X)) { 
+    z <- sum(weights[2:length(weights)] *
+               as.numeric(X[i, ])) + weights[1] 
+    if (z >= 0) { 
+      predictions[i] <- 1 
+    } else { 
+      predictions[i] <- -1 
+    } 
+  } 
+  return(predictions) 
+} 
+
+calculate_accuracy <- function(X, Y, weights) { 
+  predictions <- predict_perceptron(X, weights) 
+  correct_predictions <- sum(predictions == Y) 
+  accuracy <- correct_predictions / length(Y) 
+  return(accuracy) 
+}
+```
+
+Perceptron oluşturma yapısı, perceptron tahminleme yapısı ve accuracy kontrolü algoritması fonksiyonlar şeklinde yazıldı.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+result <- perceptron(X,Y, 0.01, 10) 
+final_weights <- result$weights 
+errors <- result$errors 
+print(errors)
+```
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+print(final_weights)
+```
+
+Veri 0.05 learning rate ve 10 epoch değerleriyle perceptron yapısı oluşturacak fonksiyonla işlendi. Fonksiyonun döndürdüğü perceptronun hata ve final ağırlıklarının değerleri yazdırıldı.  
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+accuracy <- calculate_accuracy(X, Y, final_weights) 
+print(paste("Model Dogrulugu:", accuracy))
+```
+0.05 learning rate ve 10 epoch kullanarak oluşturulan modelin doğruluk değeri 0.3 çıktı. Bu değeri daha yukarı çekebilmek amacıyla learning rate 0.05 değerine çekilerek ve epoch değeri 10 olarak bırakılarak yeni bir model oluşturduldu.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+result <- perceptron(X, Y, 0.05, 10) 
+final_weights <- result$weights 
+accuracy <- calculate_accuracy(X, Y, final_weights) 
+errors <- result$errors 
+print(paste("Model Dogrulugu:", accuracy))
+```
+Learning rate'in 0.05 seçildiği modelde accuracy değerinin 0.3'ten 0.7'ye çıktığı gözlemledi. Bu durumda learning rate'in bu aralıktaki artışının accuracy'i pozitif yönde etkilediği sonucunu çıkarılabilir.
+
+# İKİ GİZLİ KATMANLI MODEL
+```{r}
+library(fastDummies)
+dummy_data <- dummy_cols(data, select_columns = "Machine_Type", remove_selected_columns = T)
+```
+Kategorik bağımsız değişken,`Machine_Type` üzerinde dummy işlemi  yapılır.
+
+```{r}
+library(keras)
+X <- as.matrix(dummy_data[, -which(names(dummy_data) == "Failure_Risk")]) 
+y <- as.matrix(dummy_data$Failure_Risk)  
+```
+Bağımsız değişkenler X'e bağımlı değişken y'ye atanır.
+
+```{r}
+set.seed(42)
+train_indices <- sample(1:nrow(X), size = 0.7 * nrow(X))
+X_train <- X[train_indices, ]
+y_train <- y[train_indices]
+X_test <- X[-train_indices, ]
+y_test <- y[-train_indices]
+```
+
+Veri %70 train %30 test olarak bölünür.
+```{r}
+model <- keras_model_sequential() %>%
+  layer_dense(units = 10, activation = "relu", input_shape = ncol(X_train)) %>%  # İlk katman
+  layer_batch_normalization() %>%  # Batch normalization
+  layer_dropout(rate = 0.3) %>%  # Dropout (ilk katman için %30)
+  layer_dense(units = 10, activation = "relu") %>%  # İkinci katman
+  layer_batch_normalization() %>%  # Batch normalization
+  layer_dropout(rate = 0.3) %>%  # Dropout (ikinci katman için %30)
+  layer_dense(units = 1, activation = "sigmoid")  # Çıkış katmanı
+```
+Model, hedef değişkenin ikili sınıflandırması için Keras Sequential yapısı kullanılarak tasarlanmıştır. Giriş verileri, ilk katmanda 10 nöron ve ReLU aktivasyon fonksiyonu ile işlenmiştir. Her yoğun katmandan sonra batch normalization uygulanarak öğrenme süreci hızlandırılmış ve %30 oranında dropout eklenerek aşırı öğrenmenin (overfitting) önüne geçilmesi amaçlanmıştır. Aynı işlemler ikinci katmanda da tekrarlanarak modelin daha karmaşık ilişkileri öğrenmesi desteklenmiştir. Çıkış katmanında ise sigmoid aktivasyon fonksiyonu kullanılarak, modelin çıktıyı 0-1 arasında bir olasılık değeri olarak üretmesi sağlanmıştır.
+
+
+
+```{r}
+model %>% compile(
+  optimizer = optimizer_adam(learning_rate = 0.001),
+  loss = "binary_crossentropy",
+  metrics = list("accuracy")
+)
+```
+Model, `Adam` optimizasyon algoritması ile derlenmiştir. Öğrenme oranı 0.001 olarak belirlenmiş ve bu sayede modelin ağırlıkları dengeli bir şekilde güncellenmesi sağlanmıştır. İkili sınıflandırma problemi olduğu için **binary crossentropy** kayıp fonksiyonu tercih edilmiştir. Performans değerlendirmesi amacıyla doğruluk (accuracy) metriği kullanılarak modelin tahmin başarısı izlenmiştir.
+
+
+```{r message=FALSE, warning=FALSE}
+history <- model %>% fit(
+  X_train, y_train,
+  epochs = 100,
+  batch_size = 10,
+  validation_data = list(X_test, y_test),
+  callbacks = list(
+    callback_early_stopping(
+      monitor = "val_loss",      
+      patience = 10,           
+      restore_best_weights = TRUE  
+    )
+  )
+)
+```
+Model, eğitim verisi üzerinde 100 epoch boyunca, her adımda 10 veri örneği (batch size) kullanılarak eğitilmiştir. Eğitim sürecinde doğrulama verisi (`validation_data`) kullanılarak modelin genelleme performansı izlenmiştir. **Early stopping** geri çağırımı (callback) ile doğrulama kaybı (`val_loss`) 10 ardışık epoch boyunca iyileşmediğinde eğitim durdurulmuş ve en iyi ağırlıklar geri yüklenmiştir. Bu yöntem, gereksiz yere fazla eğitim yapılarak aşırı öğrenmenin (overfitting) önlenmesini sağlamıştır.
+
+
+```{r}
+library(caret)
+
+# Model tahmini
+y_pred_prob <- model %>% predict(X_test)  
+y_pred <- ifelse(y_pred_prob > 0.5, 1, 0)  
+
+# Confusion Matrix
+conf_matrix <- confusionMatrix(
+  as.factor(y_pred),
+  as.factor(y_test)
+)
+
+# Confusion Matrix'i yazdır
+print(conf_matrix)
+```
+Modelin doğruluk oranı %74.67 olarak hesaplanmış olsa da, sınıflar arasında ciddi bir dengesizlik sorunu bulunmaktadır. Model, baskın sınıf olan "0" sınıfını neredeyse tamamen doğru tahmin etmiş (%99.11 sensitivite), ancak azınlık sınıfı olan "1" sınıfını neredeyse hiç doğru tahmin edememiştir (%1.33 specificity). Kappa skoru (0.0065) modelin rastgele tahminden çok az daha iyi olduğunu, dengelenmiş doğruluk oranı (%50.22) ise modelin her iki sınıf için dengeli bir performans göstermediğini ortaya koymaktadır. Bu durum, sınıf dengesizliğine karşı modelin duyarlı olmadığını ve sadece baskın sınıfı öğrenerek genelleme yapmakta başarısız olduğunu göstermektedir. Sınıf ağırlıkları veya veri dengesini sağlamak için oversampling/undersampling gibi yöntemler bu sorunu çözmek için önerilebilir.
+

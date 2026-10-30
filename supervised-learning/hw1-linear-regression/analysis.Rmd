@@ -1,0 +1,579 @@
+---
+title: "DSM 5007 DENETİMLİ İSTATİSTİKSEL ÖĞRENME 1.ÖDEV"
+author: "Tarık Tuna Taşaltı"
+date: "`2024/11/19`"
+documentclass: ctexart
+keywords: 
+output: 
+  rticles::ctex:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+lang: "tr"
+---
+
+# GİRİŞ
+
+Bu veri seti, hayali bir Formula 1 dünyasında pilotların kariyer performanslarını ve finansal verilerini içermektedir. Amaç, bu parametrelerden yola çıkarak bir regresyon modeli geliştirmek ve sürücülerin yıllık ortalama maaşlarını tahmin etmektir.
+
+## Veri Seti Kaynağı ve Linki
+
+- **Kaynak:** Kaggle  
+- **Veri Seti Linki:** [Imaginary Formula 1 Dataset](https://www.kaggle.com/datasets/niramay/imaginary-formula-1)
+
+## Veri Seti Değişkenleri
+
+- `index`: Her sürücüyü temsil eden benzersiz bir kimlik numarası.
+- `name`: Sürücünün adı (hayali). Ancak gerçek hayattaki uyruklar göz önünde bulundurulmuştur.
+- `country`: Sürücünün ülkesi.
+- `team`: Sürücünün yarıştığı Formula 1 takımı (kariyeri boyunca sabit kabul edilmiştir).
+- `races`: Sürücünün katıldığı toplam Grand Prix (GP) sayısı.
+- `years_in_f1`: Sürücünün Formula 1’de geçirdiği toplam yıl sayısı.
+- `championships`: Sürücünün kazandığı Dünya Şampiyonluğu sayısı.
+- `gp_wins`: Sürücünün kazandığı toplam yarış sayısı.
+- `podiums`: Sürücünün podyum yaptığı toplam yarış sayısı (ilk üçte bitirme).
+- `poles`: Sürücünün kazandığı pole pozisyonu sayısı (yarışa birinci sıradan başlama).
+- `dnfs`: Sürücünün tamamlayamadığı yarış sayısı (Did Not Finish).
+- `fav_circuit`: Sürücünün favori yarışı ya da pisti.
+- `avg_yearly_salary`: Sürücünün yıllık ortalama maaşı. **Bu, hedef değişkendir (bağımlı değişken)**.
+
+## Hedef
+
+Bu veri setinde, bağımsız değişkenler kullanılarak sürücülerin `avg_yearly_salary` (yıllık ortalama maaş) değişkeni tahmin edilecektir. Tahmin edici (bağımsız) değişkenler, sürücünün performansına ve kariyerine ait diğer parametrelerdir.
+
+
+# BETİMLEYİCİ İSTATİSTİKLER 
+```{r include=FALSE}
+getwd()
+data <- read.csv("formula1.csv", row.names = NULL)
+data <- data[,-c(1)]
+
+rownames(data) <- data$name
+data$name <- NULL
+nrow(data)
+summary(data)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(corrplot)
+library(GGally)
+
+
+# Sadece sayısal sütunları seçme
+numerical_data <- data %>% select(where(is.numeric))
+```
+## Sayısal Değişkenler
+
+### Korelasyon Tablosu
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Korelasyon katsayısını gösteren ve pasta grafiği oluşturan özel fonksiyon
+pie_cor <- function(data, mapping, ...) {
+  # İlgili iki değişkenin adını al
+  x <- eval_data_col(data, mapping$x)
+  y <- eval_data_col(data, mapping$y)
+  
+  # Korelasyon hesapla
+  cor_value <- round(cor(x, y, use = "complete.obs"), 2)
+  
+  # Pasta grafiği için veri hazırla (pozitif ve negatif korelasyon için iki parça)
+  pie_data <- data.frame(
+    category = c("Correlation", "Remaining"),
+    value = c(abs(cor_value), 1 - abs(cor_value))
+  )
+  
+  # Özel renk paleti: -1 kırmızı, 0 mor, +1 mavi
+  color_palette <- colorRampPalette(c("red", "purple", "blue"))(100)
+  cor_color <- color_palette[round((cor_value + 1) * 50)]
+  
+  # Korelasyon pozitif mi negatif mi?
+  cor_fill_color <- ifelse(cor_value >= 0, "skyblue", "red")
+  
+  # Pasta grafiği oluştur
+  ggplot(pie_data, aes(x = "", y = value, fill = category)) +
+    geom_bar(stat = "identity", width = 1, color = "white") +
+    coord_polar("y") +
+    # Korelasyon katsayısını siyah çerçeveli renkli metinle göster
+    geom_text(aes(label = ifelse(category == "Correlation", cor_value, "")), 
+              x = 1, y = 0.5, size = 5, color = cor_color, fontface = "bold") +
+    scale_fill_manual(values = c("Correlation" = cor_fill_color, "Remaining" = "grey80")) +
+    theme_void() +
+    theme(legend.position = "none")
+}
+
+# ggpairs ile korelasyon matrisi oluşturma
+ggpairs(numerical_data,
+        upper = list(continuous = wrap(pie_cor)),  # Üst üçgende özel pasta grafikli korelasyon
+        lower = list(continuous = wrap("points", color = "blue", alpha = 0.6)),  # Alt üçgende scatter plot mavi
+        diag = list(continuous = wrap("barDiag", fill = "lightblue", color = "darkblue")))  # Diyagonal histogramlar
+
+```
+Veri seti incelendiğinde:
+
+- `years_in_f1` ile `races` değişkenleri arasında **0.99 düzeyinde güçlü bir pozitif korelasyon** gözlemlenmiştir. Bu durum, Formula 1'de geçirilen sezon sayısının artmasıyla katılınan yarış sayısının artacağı beklentisiyle uyumludur.
+
+- `avg_yearly_salary`, performansla ilişkili değişkenlerle anlamlı düzeylerde pozitif korelasyonlar göstermektedir. Şampiyonluk sayısı ile arasında **0.55**, kazanılan yarışlarla **0.39**, podyum başarılarıyla **0.3**, ve pole pozisyonlarıyla **0.24** düzeyinde pozitif korelasyon bulunmaktadır. Şampiyonluk ve yarış kazançlarının maaş üzerinde daha belirleyici etkiler yarattığı, podyum ve pole pozisyonlarının ise daha düşük bir etkisinin olduğu görülmektedir.
+
+- Yarış dışı kalma (`dnfs`) ile yıllık maaş arasında **0.07 düzeyinde düşük pozitif bir korelasyon** gözlemlenmiştir. Bu durum beklenmedik olsa da, **`dnfs`** ile **`races`** değişkenleri arasındaki **0.1 düzeyindeki pozitif korelasyon** nedeniyle açıklanabilir. Daha fazla yarışa katılan pilotların doğal olarak daha fazla DNF yaşama olasılığı olduğu gibi, bu pilotların genellikle daha yüksek maaşlı ve tecrübeli sürücüler olduğu düşünülebilir. Bu ilişki dolaylı bir etkiye işaret etmektedir.
+
+### Boxplot 1
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data %>%
+         select(races, gp_wins, podiums, poles) %>%
+         pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value"),
+       aes(x = Variable, y = Value, fill = Variable)) +
+  geom_boxplot(color = "darkblue", outlier.color = "red", outlier.shape = 1) +
+  theme_minimal() +
+  labs(title = "Boxplots",
+       x = "Variables",
+       y = "Values") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(0, max(data %>%
+                                           select(races, gp_wins, podiums, poles) %>%
+                                           pivot_longer(cols = everything(), values_to = "Value") %>%
+                                           pull(Value), 
+                                         na.rm = TRUE), 
+                                  by = 20))
+```
+- `races`, `poles`, `podiums`, `gp_wins` değişkenlerinin dağılımları genel olarak simetriğe yakın bir yapı sergilemektedir.
+- Her dört değişken de hem alt hem de üst uçlarda çeşitli aşırı uç (outlier) değerlere sahiptir, bu da verinin uç noktalarda belirgin sapmalar içerdiğini göstermektedir.
+### Boxplot 2
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data %>%
+         select(avg_yearly_salary, championships, dnfs, years_in_f1) %>%
+         pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value"),
+       aes(x = Variable, y = Value, fill = Variable)) +
+  geom_boxplot(color = "darkblue", outlier.color = "red", outlier.shape = 1) +
+  theme_minimal() +
+  labs(title = "Boxplots",
+       x = "Variables",
+       y = "Values") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(0, max(data %>%
+                                           select(races, gp_wins, podiums, poles) %>%
+                                           pivot_longer(cols = everything(), values_to = "Value") %>%
+                                           pull(Value), 
+                                         na.rm = TRUE), 
+                                  by = 5))
+```
+- `Years_in_f1` ve `championships` değişkenleri simetrik bir dağılım gösterirken, `dnfs` ve `avg_yearly_salary` değişkenleri hafif sağa çarpık bir yapıya sahiptir.  
+- `Avg_yearly_salary` değişkeni yalnızca alt uçlarda outlier içerirken, `years_in_f1` ve `dnfs` değişkenlerinde hem alt hem de üst uçlarda outlier değerler bulunmaktadır. 
+- Öte yandan, `championships` değişkeninde herhangi bir outlier gözlenmemektedir.
+
+
+## Kategorik Değişkenler
+
+### Kategorik Değişkenlerin Frekans Grafiği
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Sadece kategorik değişkenleri seçip uzun formata dönüştürün
+categorical_data <- data %>%
+  select(country, team, fav_circuit) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Category")
+
+# Frekans plotlarını tek bir grafikte çizdirin
+ggplot(categorical_data, aes(x = Category)) +
+  geom_bar(fill = "skyblue", color = "darkblue") +
+  facet_wrap(~Variable, scales = "free_x") + # Her kategorik değişken için ayrı panel
+  theme_minimal() +
+  labs(title = "Frequency Plots of Categorical Variables",
+       x = "Categories",
+       y = "Frequency") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # X ekseni etiketlerini eğik yap
+  
+```
+- Her üç kategorik değişken (`country`, `fav_circuit`, `team`) için frekans dağılımlarının homojen bir yapıda olmadığı gözlemlenmiştir.  
+- `country` değişkeninde özellikle `Great Britain` kategorisi diğer kategorilere göre oldukça yüksek bir frekansa sahiptir.  
+- `fav_circuit` değişkeninde belirli kategoriler diğerlerine göre daha yüksek frekansa sahiptir.
+- `team` değişkeninde `Ferrari` kategorisi açık ara en yüksek frekansa sahipken, `Mercedes` ve `Red Bull` gibi takımların frekansları oldukça düşüktür.
+
+# LİNEER REGRESYON MODELİNİN GELİŞTİRİLMESİ
+Lineer regresyon modeli geliştirilirken, kategorik değişkenler için referans kategoriler, ilgili değişkenlerde en sık gözlemlenen değerler temel alınarak belirlenmiştir. Bu doğrultuda:
+- **`country` değişkeni** için referans kategori: **`Great Britain`**
+- **`fav_circuit` değişkeni** için referans kategori: **`Circuit of The Americas`**
+- **`team` değişkeni** için referans kategori: **`Ferrari`**
+
+Bu seçimler, kategorik değişkenlerin etkisini modelde anlamlandırırken karşılaştırma yapmaya olanak sağlamak için yapılmıştır.
+```{r include=FALSE}
+data$country <- relevel(factor(data$country), ref = "Great Britain")
+data$fav_circuit <- relevel(factor(data$fav_circuit), ref = "Circuit of The Americas")
+data$team <- relevel(factor(data$team), ref = "Ferrari")
+```
+
+## Ham Veri İle Lineer Regresyon (Model1)
+1. model, ham verideki bütün parametreler kullanılarak yapılmıştır. 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+model1 <- lm(avg_yearly_salary ~ ., data = data)
+summary(model1)
+```
+Modele bakıldığında, parametrelerin çoğunlukla significant olmadığı ve modelin geçerli olmadığı gözlemlenmiştir.
+
+## `years_in_f1`, `fav_circuit` ve `country` Değişkenleri Çıkartılarak Regresyon (Model2)
+
+Veri analizi ve model geliştirme sürecinde, bağımsız değişkenler arasındaki çoklu doğrusal bağıntı ve alan bilgisine dayalı çıkarımlar göz önünde bulundurularak veri üzerinde düzenlemeler yapılmıştır. `years_in_f1` ve `races` değişkenleri arasında \( r = 0.99 \) gibi yüksek bir korelasyon tespit edilmişti ve bu durumun modelde çoklu doğrusal bağıntıya yol açma riskini azaltmak amacıyla `years_in_f1` değişkeni veri setinden çıkarılmıştır. Ayrıca, alan bilgisine dayanarak, `fav_circuit` ve `country` değişkenlerinin ortalama maaş üzerinde anlamlı bir etkisi olmadığı değerlendirilmiş ve bu değişkenler de veri setinden çıkarılmıştır. Bu düzenlemelerin ardından, güncellenmiş veri seti kullanılarak 2. model geliştirilmiştir.
+
+```{r echo=FALSE}
+data2 <- data%>%
+        select(-c("years_in_f1","fav_circuit","country"))
+model2 <- lm(avg_yearly_salary ~ ., data = data2)
+summary(model2)
+```
+Model sonuçlarına bakıldığında, `dnfs` parametresinin katsayısı \( 0.066129 \) olup, %95 güven aralığında istatistiksel olarak anlamlı değildir. Ancak, \( p \)-değerinin 0.05'e oldukça yakın olması sebebiyle sınırda anlamlı olarak değerlendirilebilir. Bu varsayım kabul edilse bile, `dnfs` değişkeni için elde edilen katsayı pozitiftir. Bu durum, `dnfs` dışındaki tüm parametreler sabit tutulduğunda, `dnf` sayısındaki her bir birimlik artışın ortalama maaşı yaklaşık \( 0.02 \) artırması beklentisini ortaya koymaktadır. Ancak, gerçek dünyada `dnf` sayısının artışıyla maaşın düşmesi beklenir. Bu çelişki, daha fazla yarış yapan pilotların `dnf` sayılarının da artma eğiliminde olmasından kaynaklanıyor olabilir. Bununla birlikte, yarış sayısındaki etkiler modelde zaten `races` parametresiyle temsil edilmektedir. Bu nedenle, `dnfs` değişkeninin modele dahil edilmemesinin daha sağlıklı bir yaklaşım olacağına karar verilmiştir.
+
+## `dnfs` Değişkeni Çıkartılarak Regresyon (Model3)
+
+Model2'de kullanılan veriden `dnfs` değişkeni çıkarılmıştır.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data3 <- data%>%
+  select(-c("years_in_f1","fav_circuit","country","dnfs"))
+model3 <- lm(avg_yearly_salary ~ ., data = data3)
+summary(model3)
+```
+Model sonuçlarına göre, tüm bağımsız değişkenler \(p < 0.05\) seviyesinde anlamlıdır ve hedef değişken üzerinde istatistiksel olarak anlamlı etkiler göstermektedir. Modelin genel performansı oldukça yüksektir; **Multiple R-squared** değeri \(0.9059\), **Adjusted R-squared** değeri \(0.9041\) olarak hesaplanmış ve modelin hedef değişkenin büyük bir kısmını açıkladığı görülmüştür. Ayrıca, **F-istatistiği (505.3)** ve buna eşlik eden \(p < 2.2 \times 10^{-16}\), modelin genel olarak istatistiksel anlamlılığını doğrulamaktadır.
+
+Bununla birlikte, **Intercept**'in negatif bir değer (\(-0.5857\)) alması, diğer tüm bağımsız değişkenler sıfır olduğunda hedef değişken olan ortalama maaşın negatif bir değer alacağını gösterir. Gerçek dünyada maaşın negatif bir değer alması beklenmeyeceği için, intercept olmaksızın bir modelin de denenmesi gerektiği düşünülmektedir.
+
+## `Intercept` Çıkarılarak Modelin Geliştirilmesi (Model3No Intercept)
+
+Model3'de kullanılan veriden `Intercept` çıkarılmıştır.
+
+```{r echo=FALSE}
+model3_no_intercept <- lm(avg_yearly_salary ~ . - 1, data = data3)
+summary(model3_no_intercept)
+```
+Intercept'siz model incelendiğinde, **\(R^2\)** (\(0.9978\)) ve **Adjusted \(R^2\)** (\(0.9978\)) değerlerinin yükseldiği gözlemlenmiştir. Bu, modelin genel açıklayıcılığının arttığını göstermektedir. Ancak, bu artış her zaman modelin gerçek dünyadaki yorumlanabilirliğini iyileştirdiği anlamına gelmez. 
+
+Intercept'in kaldırılmasıyla, `teamMcLaren` değişkeni artık istatistiksel olarak anlamlı değildir (\(p = 0.6739\)). Bu, `teamMcLaren` değişkeninin ortalama yıllık maaşı açıklamada modelde önemli bir katkı sağlayamayabileceğini göstermektedir. Bunun yanı sıra, intercept'in çıkarılması modelin temel yapısını değiştirdiği için, diğer değişkenlerin katsayılarında da değişiklikler meydana gelmiştir.
+
+
+Sonuç olarak,`teamMcLaren` değişkeni istatistiksel olarak anlamlı olmadığı için model geçerliliğini kaybetmiştir. Bu sebeple, intercept olan modelin (model3'ün) en uygun sonuçlar veren model olması beklenmektedir.
+
+# DEĞİŞKEN SEÇİM YÖNTEMLERİNİN UYGULANMASI
+
+Bu bölümde, bir önceki bölümde elde edilen **model3** ile seçilen değişkenlerin uygunluğu değerlendirilecek ve aynı değişkenlerin seçilip seçilmeyeceği kontrol edilecektir. Bu amaçla, **Olası En İyi Alt Küme Seçimi (All Possible Best Subsets)**, **Adımsal Regresyon (Stepwise Regression)**, **İleriye Doğru Seçim (Forward Selection)** ve **Geriye Doğru Eleme(Backward Elimination)**  yöntemleri uygulanacaktır. Elde edilen sonuçlar, modelde seçilen değişkenlerin tutarlılığını değerlendirmek ve değişken seçim yöntemlerinin model parametreleri üzerindeki etkisini karşılaştırmak amacıyla incelenecektir.
+
+## Olası En İyi Alt Küme Seçimi (All Possible Best Subsets)
+
+```{r include=FALSE}
+library(olsrr)
+library(ISLR)
+```
+
+
+```{r}
+a=ols_step_all_possible(model1)
+plot(a)
+```
+Grafiklere bakıldığında, tüm metrikler genelde belirli bir değerde sabitlenmektedir ve 638 numaralı model, hem açıklayıcılığı hem de basitliği bir arada sağlayan en iyi model olarak öne çıkmaktadır. Bu model, karmaşıklık ve performans arasında dengeli bir çözüm sunarak değerlendirme kriterlerine göre seçilmiştir.
+
+```{r}
+a$result$predictors[638]
+```
+638 numaralı modelde kullanılan parametreler model3'te seçilen parametreler ile uyuşmaktadır.
+
+## Adımsal Regresyon (Stepwise Regression)
+
+```{r echo=FALSE}
+s=ols_step_both_p(model1)
+s$metrics
+```
+En son `races` bağımsız değişkeni eklendikten sonra modelin, belirli değerlerde sabitlenmektedir. Bu sebeple, bu yöntem ile de seçilen parametreler model3'te seçilen parametreler ile uyuşmaktadır.
+
+## İleriye Doğru Seçim (Forward Selection)
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+f=ols_step_forward_p(model1, p_val = 0.001)
+f$metrics
+```
+En son `races` bağımsız değişkeni eklendikten sonra modelin, belirli değerlerde sabitlenmektedir. Bu sebeple, bu yöntem ile de seçilen parametreler model3'te seçilen parametreler ile uyuşmaktadır.
+
+## Geriye Doğru Eleme (Backward Elimination)
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+b=ols_step_backward_p(model1)
+b$metrics
+```
+Geriye Doğru Eleme algoritmasında, `years_in_f1` ve `country` bağımsız değişkenleri modelden çıkarılmasına rağmen `dnfs` değişkeni çıkarılmamıştır. Bu sebeple model3'te seçilen parametrelere ek olarak `dnfs` parametresini de barındırmaktadır.
+
+
+
+# LEVERAGE (KALDIRAÇ) NOKTALARI
+
+```{r}
+length (which(hatvalues(model3)>2*mean(hatvalues(model3))))
+summary(hatvalues(model3))
+```
+47 adet kaldıraç noktası belirlenmiştir.
+```{r echo=FALSE}
+par(mfrow=c(1,1))
+
+# Standart artıkları (Standardized Residuals) hesaplama
+st.res <- model3$residuals / sd(model3$residuals)
+
+# Leverage değerlerini hesaplama
+hat_values <- hatvalues(model3)
+
+# Ortalama leverage değeri
+mean_hat <- mean(hat_values)
+
+# Alanın dışında kalan gözlemleri bulma
+outliers <- which(hat_values > 2 * mean_hat & (st.res < -2 | st.res > 2))
+
+# Grafik çizimi (sadece görsel, ekleme yapılmaz)
+plot(hat_values, st.res)
+abline(h = c(-2, 2), v = 2 * mean_hat)
+
+# Alan dışındaki indeksleri yazdırma
+print(outliers)
+```
+Plotta iki adet gözlemin istenen aralığın dışında net şekilde kaldığı gözükmektedir. Bu gözlemler, 585 nolu ve 676 nolu gözlemler. 148 nolu gözlem ise sınırda gözükmektedir.
+
+```{r}
+cbind(data3[c(148,585,676),])
+summary(data3)
+```
+- 148 numaralı gözlem, bütün gözlemlerde medyana yakın değerler alsa da, `Williams`'a göre yüksek bir `avg_yearl_salary` değerine sahip olduğu için potansiyel kötü kaldıraç noktası olarak değerlendirilmiştir.
+- 585 numaralı gözlem, düşük `races` ve `championships` değerlerine karşılık medyanın üzerinde `gp_wins` değerinden kaynaklı potansiyel bir kötü kaldıraç noktası olarak değerlendirilmiştir.
+- 676 numaralı gözlem, yüksek `races` değerlerine rağmen düşük, `championships` ve `gp_wins` sayısından dolayı, potansiyel bir kötü kaldıraç noktası olarak değerlendirilmiştir.
+
+- Bu üç gözlemden, daha net olduğu için 585 ve 676 numaralı gözlemler kötü kaldıraç noktası olarak seçilmiştir.
+
+```{r}
+par(mfrow=c(1,1))
+plot(data3$avg_yearly_salary,cooks.distance(model3))
+abline(h=4/(length(data3$avg_yearly_salary)-2))
+```
+
+585 ve 676 numaralı gözlemlere ek olarak, bu grafikte eşik değerin üstünü geçen başka gözlemler de olmuştur. Bu noktaların her birisi yakından incelenerek, potansiyel outlier olup olmadığı detaylı incelenmelidir.
+
+# FİNAL MODELİN DEĞERLENDİRİLMESİ
+
+```{r echo=FALSE}
+library(olsrr)
+```
+
+## Model Varsayımlarının Kontrolü
+
+```{r}
+data3_cleaned=data3[-c(585, 676),]
+model3_cleaned <- lm(avg_yearly_salary ~ ., data = data3_cleaned)
+summary(model3_cleaned)
+qt(.975,733)
+qf(0.95,14,733)
+```
+### Katsayılar
+
+- **Intercept (\(-0.5832\))**: Diğer tüm değişkenler **0** olduğunda, beklenen yıllık ortalama maaş \(-0.5832\) birimdir.
+
+- **Alfa Romeo (\(-0.7605\))**: Diğer parametreler sabit kalmak şartıyla, bir pilotun Ferrari yerine Alfa Romeo'da olması yıllık maaşını ortalama \(0.7605\) birim azaltır.
+- **Alpha Tauri (\(-1.5651\))**: Alpha Tauri'de olmak Ferrari'ye göre yıllık maaşı \(1.5651\) birim azaltır.
+- **Alpine (\(+2.1085\))**: Alpine'de olmak Ferrari'ye göre yıllık maaşı \(2.1085\) birim artırır.
+- **Aston Martin (\(+1.4754\))**: Aston Martin'de olmak Ferrari'ye göre yıllık maaşı \(1.4754\) birim artırır.
+- **Haas (\(-3.1166\))**: Haas'ta olmak Ferrari'ye göre yıllık maaşı \(3.1166\) birim azaltır.
+- **McLaren (\(+0.6954\))**: McLaren'de olmak Ferrari'ye göre yıllık maaşı \(0.6954\) birim artırır.
+- **Mercedes (\(+2.3749\))**: Mercedes'te olmak Ferrari'ye göre yıllık maaşı \(2.3749\) birim artırır.
+- **Red Bull (\(+2.5165\))**: Red Bull'da olmak Ferrari'ye göre yıllık maaşı \(2.5165\) birim artırır.
+- **Williams (\(-1.9863\))**: Williams'ta olmak Ferrari'ye göre yıllık maaşı \(1.9863\) birim azaltır.
+
+- **Races (\(+0.0095\))**: Bir yarış daha fazla tamamlamak yıllık maaşı \(0.0095\) birim artırır.
+- **Championships (\(+0.8943\))**: Bir şampiyonluk daha kazanmak yıllık maaşı \(0.8943\) birim artırır.
+- **GP Wins (\(+0.0692\))**: Bir yarış galibiyeti daha almak yıllık maaşı \(0.0692\) birim artırır.
+- **Podiums (\(+0.0516\))**: Bir podyum daha görmek yıllık maaşı \(0.0516\) birim artırır.
+- **Poles (\(+0.0484\))**: Bir pole pozisyonu daha kazanmak yıllık maaşı \(0.0484\) birim artırır.
+
+## İstatistiksel Testler
+
+1. **Residual Standard Error (\(0.6691\))**: Tahmin hatalarının standart sapması \(0.6691\)'dir.
+2. **Multiple R-squared (\(0.9063\))**: Model, maaş değişiminin %90.63'ünü açıklıyor.
+3. **F-Statistic (\(506.4\))** ve **p-value (\(< 2.2e-16\))**:
+   - **Hipotez Testi**:
+     - **Null Hipotez (\(H_0\))**: Modelin bağımsız değişkenleri anlamlı değildir.
+     - **Alternatif Hipotez (\(H_1\))**: En az bir bağımsız değişken anlamlıdır.
+   - p-değeri \(< 0.05\) olduğundan, null hipotez reddedilir. Model genel olarak anlamlıdır.
+
+4. **qt ve qf Değerleri**:
+   - **qt (\(1.9632\))**: 733 serbestlik derecesinde %95 güvenle kritik t-değeridir. Katsayıların t-istatistiği bu değerden büyükse, anlamlı kabul edilir.Bütün parametrelerin t istatistiği değeri (\(1.9632\) değerinden büyüktür.
+   - **qf (\(1.7053\))**: 14 ve 733 serbestlik derecesiyle kritik F-değeri. Modelin F-istatistiği (\(506.4\)) bu değerden büyük olduğu için modelin anlamlı olduğu teyit edilir.
+
+
+```{r}
+confint(model3_cleaned)
+```
+- **En Dar Güven Aralıkları**: McLaren (\(0.2860\)) ve Alfa Romeo (\(0.2887\)). Bu takımların etkisi, modele göre en kesin tahmin edilenlerdir. Bu, veri setinde bu takımlara ilişkin daha fazla gözlem bulunmasından ve maaş dağılımlarının daha tutarlı olmasından kaynaklanıyor olabilir.
+
+- **En Geniş Güven Aralıkları**: Red Bull (\(2.6402\)) ve Mercedes (\(0.9504\)). Bu takımların etkisi daha belirsizdir. Bunun temel nedeni, veri setinde bu takımlara ilişkin daha az gözlem bulunması ve bu gözlemler arasındaki maaş değişkenliğinin yüksek olmasıdır.
+
+- **Tahminlerde Belirsizlik Faktörleri**:
+  - Red Bull ve Mercedes gibi üst düzey takımlarda güven aralıklarının geniş olması, bu kategoriye ait sınırlı veri sayısından kaynaklı olabilir
+  - McLaren ve Alfa Romeo gibi takımlarda dar güven aralıkları, veri setinde bu takımlara ilişkin daha fazla gözlem bulunması ve maaş etkilerinin daha tutarlı olmasıyla ilişkilidir.
+
+
+En az frekansa sahip `team` bağımsız parametresi değeri `Red Bull` ve `Mercedes` olan satırlar veriden çıkarılıp tekrardan model kurulması denenebilir.
+```{r}
+# Satırları filtrele ve kaç satırın çıkarıldığını hesapla
+removed_rows <- nrow(data3_cleaned[data3_cleaned$team %in% c("Red Bull", "Mercedes"), ])
+print(paste("Çıkarılan satır sayısı:", removed_rows))
+
+# Red Bull, Mercedes ve Haas'ı çıkartarak yeni bir veri çerçevesi oluştur
+data3_filtered <- data3_cleaned[!(data3_cleaned$team %in% c("Red Bull", "Mercedes")), ]
+
+# Yeni model oluştur
+model3_filtered <- lm(avg_yearly_salary ~ ., data = data3_filtered)
+
+# Modelin özetini yazdır
+summary(model3_filtered)
+confint(model3_filtered)
+```
+Bir önceki model için geçerli bütün varsayımlar bu model için de geçerlidir.
+
+## Press Metriği Sonuçları 
+
+```{r}
+ols_press(model1)
+ols_press(model2)
+ols_press(model3)
+ols_press(model3_cleaned)
+ols_press(model3_filtered)
+```
+- Diğer modellerin PRESS değerleri sonsuz (\(\infty\)) olarak hesaplanırken, **düşük frekanslı takımlar (Red Bull, Mercedes)** modelden çıkarılarak oluşturulan **`model3_filtered`**, 331.90 gibi istatistiksel olarak makul bir PRESS değeri üretmiştir. Bu, modelin genelleme performansında anlamlı bir iyileşme olduğunu göstermektedir.
+
+## Model Sonucu Grafikleri
+
+```{r}
+par(mfrow=c(2,2))
+plot(model3_filtered)
+```
+
+1. **Residuals vs Fitted**: Artıklar hafif bir desen gösteriyor, bu doğrusal olmayan ilişkilerin tam yakalanmadığını gösterebilir.
+
+2. **Q-Q Plot**: Artıklar normal dağılıma yakın, ancak uç değerlerde sapmalar var.
+
+3. **Scale-Location**: Artıkların varyansı sabit değil, bu da heteroscedasticity (değişen varyans) olduğunu gösteriyor.
+
+4. **Residuals vs Leverage**: Yüksek kaldıraçlı birkaç gözlem mevcut, ancak bu gözlemler Cook's Distance çizgisini aşmadığı için model üzerinde aşırı etkili olarak değerlendirilmezler.
+
+
+## Artıkların Değerlendirilmesi
+
+```{r echo=FALSE}
+# model3'ün artıklarını çıkarın
+residuals_model3_filtered <- resid(model3_filtered)
+
+# Shapiro-Wilk Testi
+shapiro_result <- shapiro.test(residuals_model3_filtered)
+print("Shapiro-Wilk Testi Sonuçları:")
+print(shapiro_result)
+
+# Normal dağılımın varsayıldığı parametreler (ortalama ve standart sapma)
+ks_result <- ks.test(residuals_model3_filtered, "pnorm", mean=mean(residuals_model3_filtered), sd=sd(residuals_model3_filtered))
+print("Kolmogorov-Smirnov Testi Sonuçları:")
+print(ks_result)
+
+# Anderson-Darling Testi
+library(nortest)   # Anderson-Darling testi için
+
+ad_result <- ad.test(residuals_model3_filtered)
+print("Anderson-Darling Testi Sonuçları:")
+print(ad_result)
+```
+- **Null Hipotez (\(H_0\))**: Veriler normal dağılıma uygundur.
+- **Alternatif Hipotez (\(H_1\))**: Veriler normal dağılıma uygun değildir.
+
+Üç testin de p-değerleri \(> 0.05\) olduğundan, **null hipotez reddedilemez**. Bu sonuç, artıkların (`residuals_model3_cleaned`) normal dağılıma uygun olduğunu göstermektedir.
+```{r include=FALSE}
+library(Hmisc)
+library(car)
+library(lmtest)
+```
+## Heteroskedastisite (Değişen Varyans) Kontrolü
+```{r echo=TRUE}
+bptest(model3_filtered)
+```
+
+- **Null Hipotez (\(H_0\))**: Modelde heteroskedastisite (değişen varyans) yoktur, yani varyans sabittir.
+- **Alternatif Hipotez (\(H_1\))**: Modelde heteroskedastisite (değişen varyans) vardır, yani varyans sabit değildir.
+
+
+ p-değeri \(> 0.05\) olduğundan, **null hipotez reddedilemez**. Bu, modelde heteroskedastisite olmadığını ve varyansın sabit kabul edilebileceğini göstermektedir.
+
+
+## Çoklu Doğrusallık Testi
+```{r}
+vif(model3_filtered)
+```
+
+- Tüm bağımsız değişkenler için \( \mathrm{GVIF} \) değerleri **1.061463**'ün altında ve oldukça düşüktür.
+- \( \mathrm{GVIF} \) değerlerinin \( \mathrm{GVIF}^{\frac{1}{2 \cdot \mathrm{Df}}} \) ile ölçeklenmiş hali de \( 1.012149 \)'un üzerinde, ancak çok düşük bir etkiye sahiptir.
+
+- Bağımsız değişkenler arasında anlamlı bir **çoklu doğrusallık** sorunu bulunmamaktadır.
+- Bu durum, modelin kararlılığını ve tahmin gücünü olumlu yönde etkiler.
+
+
+
+
+Forecastte kullanılan inputlar, her takım için geçmiş performansı temsil eden ortalama değerlerden oluşmaktadır. Bu değişkenler:
+
+- **races**: Takımın tamamladığı toplam yarış sayısının ortalaması,
+- **championships**: Takımın kazandığı şampiyonluk sayısının ortalaması,
+- **gp_wins**: Takımın kazandığı yarışların ortalaması,
+- **podiums**: Takımın podyumda bitirdiği yarışların ortalaması,
+- **poles**: Takımın elde ettiği pole pozisyonlarının ortalamasıdır.
+
+Bu metrikler, takımların genel başarı düzeylerini ve performanslarını özetleyerek gelecekteki yıllık maaş tahminlerinde temel alınmıştır. Belirsizlikleri azaltmak amacıyla veriler tam sayıya yuvarlanmıştır.
+
+## Final Modeline Forecastlerin Yapılması
+```{r echo=FALSE}
+# Tüm takımların bir listesini alalım
+teams <- unique(data3_filtered$team)
+
+# Her takım için ortalamaları hesaplayan veri çerçevesi oluşturma (tam sayıya yuvarlama)
+new_data <- data.frame(
+  team = teams,
+  races = round(mean(data3_filtered$races, na.rm = TRUE)),
+  championships = round(mean(data3_filtered$championships, na.rm = TRUE)),
+  gp_wins = round(mean(data3_filtered$gp_wins, na.rm = TRUE)),
+  podiums = round(mean(data3_filtered$podiums, na.rm = TRUE)),
+  poles = round(mean(data3_filtered$poles, na.rm = TRUE))
+)
+
+# Confidence interval tahminleri
+confidence_predictions <- predict(
+  model3_cleaned, 
+  newdata = new_data, 
+  interval = "confidence", 
+  level = 0.95
+)
+
+# Prediction interval tahminleri
+prediction_predictions <- predict(
+  model3_filtered, 
+  newdata = new_data, 
+  interval = "prediction", 
+  level = 0.95
+)
+
+# Kolonları düzenleme: Confidence ve Prediction Interval ayrı sütunlar olarak
+new_data <- cbind(
+  new_data,
+  conf_fit = confidence_predictions[, "fit"],
+  conf_lwr = confidence_predictions[, "lwr"],
+  conf_upr = confidence_predictions[, "upr"],
+  pred_fit = prediction_predictions[, "fit"],
+  pred_lwr = prediction_predictions[, "lwr"],
+  pred_upr = prediction_predictions[, "upr"]
+)
+
+# Confidence ve Prediction Interval farklarını hesaplama
+new_data <- new_data %>%
+  mutate(
+    conf_diff = conf_upr - conf_lwr, # Confidence interval farkı
+    pred_diff = pred_upr - pred_lwr  # Prediction interval farkı
+  )
+
+# Sonuçları görmek için
+print(new_data)
+```
+
+- **En Dar Güven Aralığı**: Ferrari (\(0.190\)) – Bu takımın tahmin edilen ortalama maaşı, en düşük belirsizliğe sahiptir.
+- **En Geniş Güven Aralığı**: Haas (\(0.795\)) – Haas'ın tahmin edilen ortalama maaşı, diğer takımlara kıyasla daha yüksek belirsizlik göstermektedir.
+- **En Geniş Tahmin Aralığı**: Haas (\(2.730\)) – Haas'ın bireysel gözlemleri, tahmin edilen maaşlarda en fazla varyansa sahiptir.

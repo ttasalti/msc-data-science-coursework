@@ -1,0 +1,891 @@
+---
+title: "DSM 5007 DENETİMLİ İSTATİSTİKSEL ÖĞRENME FİNAL ÖDEVİ"
+author: |
+  Tarık Tuna Taşaltı  
+date: "`2025/01/26`"
+documentclass: ctexart
+output: 
+  rticles::ctex:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+lang: "tr"
+header-includes:
+  - \usepackage[margin=2.5cm, top=3cm, bottom=3cm]{geometry}  # Kenar boşluklarını ayarlar
+keywords: 
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+# Veri Ön İşleme Aşamaları
+
+```{r include=FALSE}
+data <- read.csv("2019.csv")
+summary(data)
+data <- data[,-1]
+row.names(data) <- data[,1]
+data <- data[,-1]
+```
+
+Csv dosyası okunmuştur. summary fonksiyonu kullanılarak NA değer olmadığı saptanmıştır. Overall.rank değişkeni çıkarılmıştır. Country.or.region her satır için unique değerler barındırdığı için satır ismi olarak tanımlanmıştır ve kolon veri setinden çıkarılmıştır.
+
+## Veri Çarpıklığının İncelenmesi
+```{r echo=TRUE, results="hide"}
+library(moments)
+
+# Çarpıklık hesaplama
+calculate_skewness <- function(df) {
+  # Sadece numerik kolonları seç
+  numeric_cols <- df[, sapply(df, is.numeric)]
+  
+  # Çarpıklık hesapla
+  skewness_values <- sapply(numeric_cols, skewness)
+  
+  return(skewness_values)
+}
+
+# Çarpıklık değerlerini hesapla
+skewness_results <- calculate_skewness(data)
+
+# Sonuçları yazdır
+print(skewness_results)
+```
+- **Yüksek çarpıklık:**  
+  - **Perceptions of corruption** (1.634): Yüksek pozitif çarpıklık.  
+  - **Social support** (-1.124): Yüksek negatif çarpıklık.
+
+- **Orta seviye çarpıklık:**  
+  - **Generosity** (0.739): Pozitif çarpıklık.  
+  - **Freedom to make life choices** (-0.679): Negatif çarpıklık.  
+  - **Healthy life expectancy** (-0.608): Negatif çarpıklık.
+
+- **Düşük çarpıklık:**  
+  - **GDP per capita** (-0.381): Hafif negatif çarpıklık.  
+  - **Score** (0.011): Simetriğe oldukça yakın bir dağılım.
+
+## Box-cox Dönüşümü
+```{r echo=TRUE, results="hide"}
+library(car)
+# PowerTransform ile optimal lambda değerlerini bul
+boxcox_transformed <- powerTransform(data[, c("Social.support", 
+                                              "Perceptions.of.corruption", 
+                                              "Healthy.life.expectancy", 
+                                              "Freedom.to.make.life.choices", 
+                                              "Generosity")] + 1)
+
+# Belirlenen lambda değerleriyle dönüşümü uygula
+data_transformed <- data
+data_transformed[, c("Social.support", 
+                     "Perceptions.of.corruption", 
+                     "Healthy.life.expectancy", 
+                     "Freedom.to.make.life.choices", 
+                     "Generosity")] <- bcPower(
+                       data[, c("Social.support", 
+                                "Perceptions.of.corruption", 
+                                "Healthy.life.expectancy", 
+                                "Freedom.to.make.life.choices", 
+                                "Generosity")] + 1,  # +1 ofset eklenmiş veriyi kullan
+                       coef(boxcox_transformed)  # Optimal lambda değerlerini kullan
+                     )
+
+calculate_skewness(data_transformed)
+```
+Box-Cox dönüşümü sonrası skewness değerlerinde belirgin bir azalma görülmüştür:
+
+- **Score**, **Generosity**, **Freedom to make life choices** ve **Healthy life expectancy** gibi değişkenler simetriğe oldukça yakın bir dağılıma ulaşmıştır.
+- Başlangıçta yüksek negatif çarpıklığa sahip olan **Social support** (-1.12 → -0.28) ve yüksek pozitif çarpıklık gösteren **Perceptions of corruption** (1.63 → 0.38), daha dengeli bir yapıya kavuşmuştur.
+- **GDP per capita** gibi hafif negatif çarpıklığa sahip değişkenler ise simetriğe daha da yaklaşmıştır (-0.38 → -0.28).
+
+Bu sonuçlar, dönüşümün değişkenlerin dağılımlarını normalize etmede etkili olduğunu göstermektedir.
+
+## Veri Görselleştirmesi
+```{r fig.height=8, fig.width=10, message=FALSE, warning=FALSE, include=FALSE}
+library(GGally)
+library(ggplot2)
+
+
+calculate_binwidth <- function(x) {
+  if (length(x) < 2) {
+    return(1)  # Çok az veri varsa varsayılan bin genişliği
+  }
+  range_x <- range(x, na.rm = TRUE)
+  bins <- 1 + log2(length(x))  # Sturges formülü
+  binwidth <- (range_x[2] - range_x[1]) / bins
+  return(binwidth)
+}
+
+
+
+
+# Özel histogram fonksiyonu
+custom_hist <- function(data, mapping, ...) {
+  x <- eval_data_col(data, mapping$x)
+  binwidth <- calculate_binwidth(x)  # Binwidth'i hesapla
+  ggplot(data, mapping) +
+    geom_histogram(binwidth = binwidth, fill = "lightblue", color = "darkblue", ...) +
+    theme_minimal()
+}
+
+# Pie korelasyon fonksiyonu
+pie_cor <- function(data, mapping, ...) {
+  x <- eval_data_col(data, mapping$x)
+  y <- eval_data_col(data, mapping$y)
+  
+  cor_value <- round(cor(x, y, use = "complete.obs"), 2)
+  
+  pie_data <- data.frame(
+    category = c("Correlation", "Remaining"),
+    value = c(abs(cor_value), 1 - abs(cor_value))
+  )
+  
+  color_palette <- colorRampPalette(c("red", "purple", "blue"))(100)
+  cor_color <- color_palette[round((cor_value + 1) * 50)]
+  
+  cor_fill_color <- ifelse(cor_value >= 0, "skyblue", "red")
+  
+  ggplot(pie_data, aes(x = "", y = value, fill = category)) +
+    geom_bar(stat = "identity", width = 1, color = "white") +
+    coord_polar("y") +
+    geom_text(aes(label = ifelse(category == "Correlation", cor_value, "")), 
+              x = 1, y = 0.5, size = 5, color = cor_color, fontface = "bold") +
+    scale_fill_manual(values = c("Correlation" = cor_fill_color, "Remaining" = "grey80")) +
+    theme_void() +
+    theme(legend.position = "none")
+}
+```
+
+
+```{r echo=FALSE, fig.height=8, fig.width=10, message=FALSE, warning=FALSE}
+# ggpairs ile korelasyon matrisi oluşturma
+ggpairs(
+  data_transformed,  # Dataframe olarak sadece data[,-1]
+  upper = list(continuous = wrap(pie_cor)),  # Üst üçgende özel pasta grafikli korelasyon
+  lower = list(continuous = wrap("points", color = "blue", alpha = 0.6)),  # Alt üçgende scatter plot mavi
+  diag = list(continuous = wrap(custom_hist))  # Diyagonal için özel histogram
+)
+```
+Görsel, bağımsız değişkenlerin hem kendi aralarındaki ilişkileri hem de hedef değişken olan **Score** ile olan korelasyonlarını göstermektedir. **GDP per capita**, **Social support** ve **Healthy life expectancy** arasında yüksek pozitif korelasyonlar (0.77-0.85) bulunmakta ve bu değişkenler aynı zamanda **Score** ile güçlü bir ilişki sergilemektedir (sırasıyla 0.79, 0.81 ve 0.80). Bu durum, yaşam memnuniyetinin gelir, sosyal destek ve sağlık faktörlerinden önemli ölçüde etkilendiğini göstermektedir. **Freedom to make life choices**, hem diğer değişkenlerle (örneğin **Social support** ile 0.73) hem de **Score** ile (0.58) orta düzeyde bir ilişki göstererek özgürlük algısının yaşam memnuniyetine dolaylı katkısını işaret etmektedir. Öte yandan, **Generosity** ve **Perceptions of corruption**, diğer bağımsız değişkenlerle düşük korelasyona sahip olup, **Score** ile olan ilişkileri de zayıftır (0.08 ve 0.3). Bu, bu değişkenlerin yaşam memnuniyeti üzerindeki etkilerinin sınırlı olduğunu göstermektedir.
+
+## Verinin Eğitim - Test Şeklinde Bölünmesi
+
+Veri Eğitim-Test olarak %70 oranında bölünmüştür.
+
+```{r}
+# Set random seed for reproducibility
+set.seed(325)
+
+# Veri satır sayısını al
+n <- nrow(data)
+
+# %70'lik train indekslerini rastgele seç
+train_indices <- sample(seq_len(n), size = 0.7 * n)
+
+# Train ve test veri setlerini oluştur
+train_data <- data[train_indices, ]
+test_data <- data[-train_indices,]
+```
+
+## Box-Cox Lambda Değerlerinin Eğitim Verisi Üzerinden Bulunması
+
+Box-Cox dönüşümü sırasında herhangi bir overfitting oluşmaması adına, lambda değerleri eğitim verisi üzerinden elde edilmiştir. Elde edilen lambda değeri ile eğitim veri üzerinde dönüşümler yapılmıştır.
+```{r echo=TRUE, results="hide"}
+# PowerTransform ile optimal lambda değerlerini bul (sadece train verisi üzerinde)
+boxcox_transformed <- powerTransform(train_data[, c("Social.support", 
+                                                    "Perceptions.of.corruption", 
+                                                    "Healthy.life.expectancy", 
+                                                    "Freedom.to.make.life.choices", 
+                                                    "Generosity")] + 1)
+
+# Lambda değerlerini kontrol et
+boxcox_transformed
+
+# Belirlenen lambda değerleriyle dönüşümü uygula
+train_data_transformed <- train_data
+test_data_transformed <- test_data
+
+# Train verisine dönüşüm uygula
+train_data_transformed[, c("Social.support", 
+                           "Perceptions.of.corruption", 
+                           "Healthy.life.expectancy", 
+                           "Freedom.to.make.life.choices", 
+                           "Generosity")] <- bcPower(
+                             train_data[, c("Social.support", 
+                                            "Perceptions.of.corruption", 
+                                            "Healthy.life.expectancy", 
+                                            "Freedom.to.make.life.choices", 
+                                            "Generosity")] + 1,  # +1 ofset eklenmiş veriyi kullan
+                             coef(boxcox_transformed)  # Optimal lambda değerlerini kullan
+                           )
+```
+
+## Box-Cox Dönüşümünün Test Verisine Uygulanması
+
+Eğitim verisi ile elde edilen lambda değerleri kullanılarak test verisinde de aynı şekilde box-cox dönüşümü yapılmıştır.
+```{r}
+# Test verisine dönüşüm uygula (Train'den bulunan lambda değerleriyle)
+test_data_transformed[, c("Social.support", 
+                          "Perceptions.of.corruption", 
+                          "Healthy.life.expectancy", 
+                          "Freedom.to.make.life.choices", 
+                          "Generosity")] <- bcPower(
+                            test_data[, c("Social.support", 
+                                          "Perceptions.of.corruption", 
+                                          "Healthy.life.expectancy", 
+                                          "Freedom.to.make.life.choices", 
+                                          "Generosity")] + 1,  # +1 ofset eklenmiş veriyi kullan
+                            coef(boxcox_transformed)  # Optimal lambda değerlerini kullan
+                          )
+```
+
+
+# Regresyon Modellerinin Geliştirilmesi
+
+## Regresyon Metriklerinin Tanımlanması
+
+Regresyon metrikleri olarak MAE, MAPE, MSE, RMSE ve R² seçilmiştir.
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(MLmetrics)
+
+calc_reg_metrics <- function(
+    train_preds,  # Eğitim seti tahminleri
+    train_actual, # Eğitim seti gerçek değerleri
+    test_preds,   # Test seti tahminleri
+    test_actual,  # Test seti gerçek değerleri
+    prefix = "model" # Sonuç sütunları için önek
+) {
+  # Train metrikleri
+  train_mae  <- MAE(train_preds, train_actual)
+  train_mape <- MAPE(train_preds, train_actual)
+  train_mse  <- MSE(train_preds, train_actual)
+  train_rmse <- RMSE(train_preds, train_actual)
+  train_r2   <- R2_Score(train_preds, train_actual)
+  
+  # Test metrikleri
+  test_mae   <- MAE(test_preds, test_actual)
+  test_mape  <- MAPE(test_preds, test_actual)
+  test_mse   <- MSE(test_preds, test_actual)
+  test_rmse  <- RMSE(test_preds, test_actual)
+  test_r2    <- R2_Score(test_preds, test_actual)
+  
+  # Tek tablo halinde döndür
+  results_df <- data.frame(
+    Metric = c(
+      paste0(prefix, "_MAE"), 
+      paste0(prefix, "_MAPE"), 
+      paste0(prefix, "_MSE"), 
+      paste0(prefix, "_RMSE"), 
+      paste0(prefix, "_R2")
+    ),
+    Train  = c(train_mae, train_mape, train_mse, train_rmse, train_r2),
+    Test   = c(test_mae,  test_mape,  test_mse,  test_rmse,  test_r2)
+  )
+  
+  return(results_df)
+}
+```
+
+## Lineer Regresyon
+```{r message=FALSE, warning=FALSE}
+library(olsrr)
+#str(train_data)
+model1 <- lm(Score ~ ., data = train_data_transformed)
+a=ols_step_all_possible(model1)
+#a$result
+#View(a$result)
+#plot(a)
+#a$result$predictors[57]
+
+model2 <- lm(Score ~ ., data = train_data_transformed[c("Score","GDP.per.capita", 
+                                                        "Social.support", 
+                                                        "Healthy.life.expectancy", 
+                                                        "Freedom.to.make.life.choices", 
+                                                        "Perceptions.of.corruption")])
+summary(model2)
+shapiro.test(residuals(model2))
+
+library(Hmisc)
+library(car)
+library(lmtest)
+
+bptest(model2)
+vif(model2)
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+lm_predictions_train <- predict(model2, newdata = train_data_transformed)
+lm_predictions_test  <- predict(model2, newdata = test_data_transformed)
+
+lm_results_df <- calc_reg_metrics(
+  train_preds = lm_predictions_train,
+  train_actual = train_data_transformed$Score,
+  test_preds = lm_predictions_test,
+  test_actual = test_data_transformed$Score,
+  prefix = "lm"
+)
+```
+Lineer regresyon modeli oluşturulurken, ilk aşamada tüm değişkenler modele dahil edilerek **Model 1** oluşturulmuştur. Daha sonra **all possible regressions** yöntemiyle değişkenlerin tüm alt kümeleri değerlendirilmiş ve değişken sayısı ile **Cp** değeri arasındaki farkın en küçük olduğu **57. model** seçilmiştir. Bu modelde, orijinal veri setinden yalnızca **Generosity** değişkeni çıkarılmıştır.
+
+Kurulan modelin şu özellikleri bulunmaktadır:
+- Modeldeki tüm parametreler **istatistiksel olarak anlamlı** bulunmuştur.
+- Modelin artıklarının **normal dağılıma uygunluğu**, **Shapiro-Wilk testi** ile doğrulanmıştır.
+- **Breusch-Pagan testi** sonuçlarına göre, homoskedastisite varsayımının ihlal edildiğine dair **yeterli kanıt bulunamamıştır**.
+- **Variance Inflation Factor (VIF)** değerleri incelendiğinde, hiçbir değişkenin 5’in üzerinde bir değere sahip olmadığı görülmüştür. Bu da modelde **multikolineerlik probleminin olmadığını** göstermektedir.
+
+Bu sonuçlar, seçilen modelin istatistiksel açıdan **sağlam ve güvenilir** olduğunu göstermektedir.
+
+## Regresyon Ağacı
+```{r fig.height=6.5, fig.width=10}
+library(tree)
+set.seed(325)
+tree_hitters_full <-tree(Score~., data=train_data_transformed)
+plot(tree_hitters_full)
+text(tree_hitters_full)
+
+cv_hitters_full <- cv.tree(tree_hitters_full)
+plot(cv_hitters_full$size,cv_hitters_full$dev,type='b')
+prune_hitters_full=prune.tree(tree_hitters_full,best=6)
+plot(prune_hitters_full)
+text(prune_hitters_full,pretty=0)
+```
+
+
+```{r include=FALSE}
+unpruned_train_preds <- predict(tree_hitters_full, newdata = train_data_transformed)
+unpruned_test_preds <- predict(tree_hitters_full, newdata = test_data_transformed)
+
+
+unpruned_tree_results_df <- calc_reg_metrics(
+  train_preds = unpruned_train_preds,
+  train_actual = train_data_transformed$Score,
+  test_preds = unpruned_test_preds,
+  test_actual = test_data_transformed$Score,
+  prefix = "unpruned_tree"
+)
+
+pruned_train_preds <- predict(prune_hitters_full, newdata = train_data_transformed)
+pruned_test_preds  <- predict(prune_hitters_full,  newdata = test_data_transformed)
+
+pruned_tree_results_df <- calc_reg_metrics(
+  train_preds = pruned_train_preds,
+  train_actual = train_data_transformed$Score,
+  test_preds = pruned_test_preds,
+  test_actual = test_data_transformed$Score,
+  prefix = "pruned_tree"
+)
+```
+Regresyon ağacı sonucunda, Generosity değişkeninin Lineer Regresyon modelinde çıkarılmasına rağmen, burada en önemli featurelardan birisi olması dikkat çekmiştir. 2. grafikte ağaç budama için 6 dalın en düşük değeri aldığı gözükmektededir. Bu sebeple, regresyon ağacında hem budama yapılmış hem budama yapılmamış model dikkate alınmıştır.
+
+
+## Bagging
+```{r message=FALSE, warning=FALSE}
+set.seed(325)
+library(randomForest)
+bag<-randomForest(Score~.,data = train_data_transformed,mtry=6,importance=TRUE)
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+bag_train_preds <- predict(bag, newdata = train_data_transformed)
+bag_test_preds <- predict(bag, newdata = test_data_transformed)
+
+bag_results_df <- calc_reg_metrics(
+  train_preds = bag_train_preds,
+  train_actual = train_data_transformed$Score,
+  test_preds = bag_test_preds,
+  test_actual = test_data_transformed$Score,
+  prefix = "bagging"
+)
+```
+Bagging, yapılırken veride 6 feature bulunduğu için mtry değeri 6 olarak girilmiştir.
+
+
+## Random Forest
+```{r}
+set.seed(325)
+rf<-randomForest(Score~.,data = train_data_transformed,mtry=2,importance=TRUE)
+```
+
+
+```{r include=FALSE}
+rf_train_preds <- predict(rf, newdata = train_data_transformed)
+rf_test_preds <- predict(rf, newdata = test_data_transformed)
+
+rf_results_df <- calc_reg_metrics(
+  train_preds = rf_train_preds,
+  train_actual = train_data_transformed$Score,
+  test_preds = rf_test_preds,
+  test_actual = test_data_transformed$Score,
+  prefix = "rf"
+)
+```
+Random Forest, yapılırken veride 6 feature bulunduğu için mtry değeri 6/3=2 'den dolayı 2 olarak girilmiştir. 
+
+## Genel Değerlendirme
+```{r}
+list(
+  linear_regression            = lm_results_df,
+  unpruned_tree = unpruned_tree_results_df,
+  pruned_tree   = pruned_tree_results_df,
+  random_forest            = rf_results_df
+)
+```
+
+Model performanslarının değerlendirilmesinde kullanılan metrikler (MAE, MAPE, MSE, RMSE ve R²) üzerinden bir analiz yapılmış ve her modelin eğitim ve test veri setlerindeki sonuçları incelenmiştir. Değerlendirme sonucunda **Lineer Regresyon (lm)** modeli en güvenilir model olarak seçilmiştir.
+
+### **Değerlendirme Kriterleri**
+1. **Tahmin Hataları (RMSE, MAE, MAPE):** 
+   Lineer Regresyon modeli, özellikle **RMSE (test: 0.6111)** ve **MAE (test: 0.4607)** değerleriyle test veri setindeki hataları minimum düzeyde tutmayı başarmıştır. Ayrıca **MAPE (test: 0.0966)** değeri, diğer modellere kıyasla daha düşük bir hata oranına işaret etmektedir. Bu, modelin test verisindeki tahmin doğruluğunun yüksek olduğunu göstermektedir.
+
+2. **Eğitim ve Test Metriklerinin Birbirine Yakınlığı:**
+   Lineer Regresyon modelinde eğitim ve test seti arasındaki metrik farklarının oldukça düşük olduğu gözlemlenmiştir. Örneğin, **R²** değerleri eğitim setinde **0.8047**, test setinde ise **0.7624** olarak oldukça yakın değerlerdedir. Bu durum, modelin genelleme kabiliyetinin yüksek olduğunu ve overfitting (aşırı öğrenme) probleminin bulunmadığını göstermektedir.
+
+3. **Model Basitliği ve Güvenilirlik:**
+   Lineer Regresyon, basit yapısıyla diğer modellere kıyasla daha açıklayıcı ve yorumlanabilir bir çözüm sunmaktadır. Parametrelerin anlamlı olması, modelin sağlam bir istatistiksel temele dayandığını desteklemektedir.
+
+### **Diğer Modellerle Karşılaştırma**
+- **Random Forest:** En düşük test seti hatalarından bazılarına sahip olmasına rağmen, eğitim ve test metrikleri arasındaki farklar Lineer Regresyon'a göre daha yüksektir. Bu durum, Random Forest modelinin genelleme kabiliyetinin Lineer Regresyon kadar güvenilir olmadığını göstermektedir.
+- **Unpruned ve Pruned Decision Tree:** Karar ağacı modelleri, test setindeki hatalarının yüksekliği ve düşük genelleme kabiliyetleri sebebiyle Lineer Regresyon kadar güvenilir bulunmamıştır.
+
+### **Sonuç**
+Eğitim ve test setindeki metriklerin birbirine yakın olması, düşük tahmin hataları (MAE, RMSE, MAPE) ve modelin genelleme kabiliyeti dikkate alındığında, **Lineer Regresyon modeli** bu veri seti için en güvenilir ve tercih edilebilir model olarak değerlendirilmiştir. Lineer regresyonda, Genosisity değişkeni kullanılmadığı için, bu parametre'nin model üzerinde bir etkisi olmadığına karar verilmiştir.
+
+# Sınıflandırma Modelleri
+
+## Sınıflandırma İçin Eşik Değerlerinin Belirlenmesi
+
+Verinin dengeli ve eşit iki parçaya bölünebilmesi adına, medyan değeri eşik değer olarak belirlenmiştir. Medyan değerinden büyük olanlar 1, küçük ve eşit olanlar 0 şeklinde kodlanmıştır. Modelin doğru geliştirilebilmesi adına, sonrasında hedef değişken factor olarak tanımlanmıştır.
+```{r}
+threshold <- median(c(train_data_transformed$Score,test_data_transformed$Score))
+train_data_transformed$Score <- ifelse(threshold < train_data_transformed$Score,1,0)
+test_data_transformed$Score <- ifelse(threshold < test_data_transformed$Score,1,0)
+table(c(train_data_transformed$Score,test_data_transformed$Score))
+train_data_transformed$Score <- as.factor(train_data_transformed$Score)
+test_data_transformed$Score <- as.factor(test_data_transformed$Score)
+```
+
+## Sınıflandırma Metriklerinin Tanımlanması
+
+Sınıflandırma metrikleri olarak f1 score, accuracy, precision, recall, sensitivity ve specifity seçilmiştir.
+```{r include=FALSE}
+calc_classification_metrics <- function(
+    train_pred,    # Eğitim seti tahminleri (factor veya 0/1)
+    train_actual,  # Eğitim seti gerçek değerleri (factor veya 0/1)
+    test_pred,     # Test seti tahminleri
+    test_actual,   # Test seti gerçek değerleri
+    positive = "1",# Pozitif sınıfın etiketi
+    prefix   = "model" # Önek (prefix) örn: "unpruned", "pruned", "rf" vb.
+) {
+  # EĞİTİM METRİKLERİ
+  train_f1   <- F1_Score(train_pred, train_actual, positive = positive)
+  train_acc  <- Accuracy(train_pred, train_actual)
+  train_prec <- Precision(train_pred, train_actual, positive = positive)
+  train_rec  <- Recall(train_pred, train_actual, positive = positive)
+  train_sens <- Sensitivity(train_pred, train_actual, positive = positive)
+  train_spec <- Specificity(train_pred, train_actual, positive = positive)
+  
+  # TEST METRİKLERİ
+  test_f1    <- F1_Score(test_pred, test_actual, positive = positive)
+  test_acc   <- Accuracy(test_pred, test_actual)
+  test_prec  <- Precision(test_pred, test_actual, positive = positive)
+  test_rec   <- Recall(test_pred, test_actual, positive = positive)
+  test_sens  <- Sensitivity(test_pred, test_actual, positive = positive)
+  test_spec  <- Specificity(test_pred, test_actual, positive = positive)
+  
+  # TEK BİR TABLO HALİNDE BİRLEŞTİR
+  results_df <- data.frame(
+    Metric = c(
+      paste0(prefix, "_F1"), 
+      paste0(prefix, "_Accuracy"), 
+      paste0(prefix, "_Precision"), 
+      paste0(prefix, "_Recall"), 
+      paste0(prefix, "_Sensitivity"), 
+      paste0(prefix, "_Specificity")
+    ),
+    Train = c(
+      train_f1, train_acc, train_prec, train_rec, train_sens, train_spec
+    ),
+    Test  = c(
+      test_f1,  test_acc,  test_prec,  test_rec,  test_sens,  test_spec
+    )
+  )
+  
+  return(results_df)
+}
+```
+
+## Sınıflandırma Ağacı
+```{r fig.height=6.5, fig.width=10}
+set.seed(325)
+tree_hitters_full <-tree(Score~., data=train_data_transformed)
+plot(tree_hitters_full)
+text(tree_hitters_full)
+
+
+cv_hitters_full <- cv.tree(tree_hitters_full)
+plot(cv_hitters_full$size,cv_hitters_full$dev,type='b')
+prune_hitters_full=prune.tree(tree_hitters_full,best=5)
+plot(prune_hitters_full)
+text(prune_hitters_full,pretty=0)
+```
+
+
+```{r include=FALSE}
+unpruned_train_pred <- predict(tree_hitters_full, 
+                               newdata = train_data_transformed, 
+                               type = "class")
+unpruned_test_pred  <- predict(tree_hitters_full, 
+                               newdata = test_data_transformed, 
+                               type = "class")
+
+unpruned_results_df <- calc_classification_metrics(
+  train_pred   = unpruned_train_pred,
+  train_actual = train_data_transformed$Score,
+  test_pred    = unpruned_test_pred,
+  test_actual  = test_data_transformed$Score,
+  positive     = "1",
+  prefix       = "unpruned_tree"  # İstediğiniz ön-ek
+)
+
+pruned_train_pred <- predict(prune_hitters_full, newdata = train_data_transformed, type = "class")
+pruned_test_pred <- predict(prune_hitters_full, newdata = test_data_transformed, type = "class")
+
+pruned_results_df <- calc_classification_metrics(
+  train_pred   = pruned_train_pred,
+  train_actual = train_data_transformed$Score,
+  test_pred    = pruned_test_pred,
+  test_actual  = test_data_transformed$Score,
+  positive     = "1",
+  prefix       = "pruned_tree"  # İstediğiniz ön-ek
+)
+
+```
+
+Prune edilmemiş ağaçta, her iki dalının da aynı değer verdiği bir sürü dal fark edilmiştir. Grafik, en ideal dal sayısını 2 olarak belirlemiş olsa da, test verisindeki metrikler yeterli bulunmadığı için 3,4,5,6 alternatifi denenmiştir ve en iyi sonuçlar 6'da elde edildiği için 6 dal sayısı olarak belirlenmiştir. 6 dala bakıldığında da iki tarafın aynı değeri tahmin ettiği bir tahmin değeri elde edilmemiştir.
+
+## Bagging
+```{r}
+set.seed(325)
+bag<-randomForest(Score~.,data = train_data_transformed,mtry=6,importance=TRUE)
+```
+
+
+```{r include=FALSE}
+bag_train_pred <- predict(bag, newdata = train_data_transformed, type = "class")
+bag_test_pred <- predict(bag, newdata = test_data_transformed, type = "class")
+
+bag_results_df <- calc_classification_metrics(
+  train_pred   = bag_train_pred,
+  train_actual = train_data_transformed$Score,
+  test_pred    = bag_test_pred,
+  test_actual  = test_data_transformed$Score,
+  positive     = "1",
+  prefix       = "bag" 
+)
+```
+Bagging, yapılırken veride 6 feature bulunduğu için mtry değeri 6 olarak girilmiştir.
+
+## Random Forest
+```{r}
+set.seed(325)
+rf<-randomForest(Score~.,data = train_data_transformed,mtry=2,importance=TRUE)
+```
+
+
+```{r include=FALSE}
+rf_train_pred <- predict(rf, newdata = train_data_transformed, type = "class")
+rf_test_pred <- predict(rf, newdata = test_data_transformed, type = "class")
+
+rf_results_df <- calc_classification_metrics(
+  train_pred   = rf_train_pred,
+  train_actual = train_data_transformed$Score,
+  test_pred    = rf_test_pred,
+  test_actual  = test_data_transformed$Score,
+  positive     = "1",
+  prefix       = "rf"
+)
+```
+Random Forest, yapılırken veride 6 feature bulunduğu için mtry değeri 6/3=2 'den dolayı 2 olarak girilmiştir. 
+
+## Lojistik Regresyon
+```{r message=FALSE, warning=FALSE}
+library(MASS)
+
+model1_logistic <- glm(Score ~ ., 
+                       data = train_data_transformed, 
+                       family = binomial)
+model2_logistic=stepAIC(model1_logistic, direction = "both", trace = F)
+summary(model2_logistic)
+vif(model2_logistic)
+```
+
+
+```{r include=FALSE}
+glm_train_prob <- predict(model2_logistic, newdata = train_data_transformed, type = "response")
+glm_train_pred <- ifelse(glm_train_prob > 0.5, 1, 0)
+glm_train_pred <- factor(glm_train_pred, levels = c(0, 1))
+
+glm_test_prob <- predict(model2_logistic, newdata = test_data_transformed,  type = "response")
+glm_test_pred <- ifelse(glm_test_prob > 0.5, 1, 0)
+glm_test_pred <- factor(glm_test_pred, levels = c(0, 1))
+
+glm_results_df <- calc_classification_metrics(
+  train_pred   = glm_train_pred,
+  train_actual = train_data_transformed$Score,
+  test_pred    = glm_test_pred,
+  test_actual  = test_data_transformed$Score,
+  positive     = "1",
+  prefix       = "glm"
+)
+```
+
+1. **Model Seçimi:**
+   - `stepAIC` ile `model1_logistic` üzerinde AIC bazlı ileri ve geri değişken seçimi yapılmış, optimize edilmiş model olarak `model2_logistic` elde edilmiştir.
+
+2. **Seçilen Değişkenler:**
+   - **Social.support**, **Healthy.life.expectancy**, **Freedom.to.make.life.choices**, **Perceptions.of.corruption** seçilmiştir. Tüm değişkenler anlamlıdır (**p < 0.05**).
+
+3. **Model Performansı:**
+   - **AIC (62.799):** Düşük AIC değeri modelin uygun olduğunu gösterir.
+   - **Residual Deviance (52.799):** Model, bağımsız değişkenlerle hedef değişkeni iyi açıklamaktadır.
+   - VIF değerleri düşük olup çoklu doğrusallık sorunu bulunmamaktadır.
+
+
+## LDA (Linear Discriminant Analysis)
+```{r message=FALSE, warning=FALSE}
+#LDA
+set.seed(325)
+
+model_lda<-lda(Score ~ ., 
+    data = train_data_transformed[,c("Social.support", "Healthy.life.expectancy",
+                                     "Freedom.to.make.life.choices",
+                                     "Perceptions.of.corruption","Score")])
+#model_lda
+
+lda_train_pred <- predict(model_lda, train_data_transformed[,c("Social.support", "Healthy.life.expectancy",
+                                                               "Freedom.to.make.life.choices",
+                                                               "Perceptions.of.corruption","Score")])$class
+plot(model_lda)
+library(klaR)
+partimat(Score~., data=train_data_transformed[,c("Social.support", "Healthy.life.expectancy",
+                                                 "Freedom.to.make.life.choices","Perceptions.of.corruption","Score")],
+         method="lda")
+```
+
+
+```{r include=FALSE}
+lda_test_pred <- predict(model_lda, test_data_transformed[,c("Social.support", "Healthy.life.expectancy",
+                                                             "Freedom.to.make.life.choices","Perceptions.of.corruption","Score")])$class
+
+lda_results_df <- calc_classification_metrics(
+  train_pred   = lda_train_pred,
+  train_actual = train_data_transformed$Score,
+  test_pred    = lda_test_pred,
+  test_actual  = test_data_transformed$Score,
+  positive     = "1",
+  prefix       = "lda"
+)
+```
+LDA modeli, yöntemin çoklu doğrusallık hassasiyeti nedeniyle, lojistik regresyonda AIC ile seçilen değişkenlerle oluşturulmuştur (**Social.support**, **Healthy.life.expectancy**, **Freedom.to.make.life.choices**, **Perceptions.of.corruption**). Bu seçim, model stabilitesini ve değişkenlerin sınıfları ayırmadaki etkinliğini artırmıştır.
+
+1. **Prior Olasılıklar:** Sınıflar dengelidir (%50.46 ve %49.54).
+
+2. **Grup Ortalamaları:** Sınıf 1'in değişken ortalamaları daha yüksektir, özellikle **Social.support** ve **Healthy.life.expectancy** belirgin fark yaratır.
+
+3. **Ayrım Katsayıları:** Veri standartlaştırılmadığı için katsayı büyüklükleri doğrudan etkili değişkenleri göstermez.
+
+### Histogramlar:
+- Sınıf 1 gözlemleri pozitif, sınıf 0 gözlemleri negatif değerlere yoğunlaşmıştır. Ayrım genel olarak net, ancak örtüşmeler vardır.
+
+### Partition Plot:
+- **Healthy.life.expectancy** ve **Social.support** en düşük hata oranını (0.138) vermektedir. Diğer değişken kombinasyonlarında hata oranları daha yüksektir.
+
+
+## QDA (Quadratic Discriminant Analysis)
+```{r fig.width=10, fig.height=8}
+#QDA
+model_qda<-qda(Score ~ ., 
+               data = train_data_transformed)
+
+qda_train_pred <- predict(model_qda, train_data_transformed)$class
+
+partimat(Score~ ., data=train_data_transformed,method="qda")
+```
+
+
+```{r fig.height=8, fig.width=10, include=FALSE}
+qda_test_pred <- predict(model_qda, test_data_transformed)$class
+
+qda_results_df <- calc_classification_metrics(
+  train_pred   = qda_train_pred,
+  train_actual = train_data_transformed$Score,
+  test_pred    = qda_test_pred,
+  test_actual  = test_data_transformed$Score,
+  positive     = "1",
+  prefix       = "qda"
+)
+```
+QDA modeli, çoklu doğrusallığa LDA'ya göre daha dayanıklı olduğu için tüm değişkenler kullanılarak oluşturulmuş ve sınıflar arasındaki doğrusal olmayan ayrımları etkili bir şekilde modellemiştir.
+
+1. **Genel Ayrım:** QDA, esnek sınırlarla sınıflar arasında net bir ayrım sağlamış, ancak bazı değişken kombinasyonlarında örtüşme gözlenmiştir.
+
+2. **Hata Oranları:** **Healthy.life.expectancy** ve **Social.support** düşük hata oranı (0.138-0.193) ile en iyi ayrımı sağlarken, **Generosity** ve **Perceptions.of.corruption** kombinasyonları daha yüksek hata oranı göstermiştir (0.266-0.349).
+
+Model, doğrusal olmayan sınırlarla karmaşık ayrımları etkili şekilde yakalamıştır.
+
+## ROC - AUC
+
+### ROC Nedir?
+ROC (Receiver Operating Characteristic) eğrisi, bir modelin sınıflandırma performansını değerlendirmek için kullanılır. Bu eğri, farklı eşik değerlerinde modelin **True Positive Rate** (Sensitivity) ve **False Positive Rate** (1 - Specificity) arasındaki ilişkiyi gösterir.
+
+### AUC Nedir?
+AUC (Area Under Curve), ROC eğrisinin altında kalan alanı ifade eder ve modelin genel performansını ölçer. AUC değeri 1’e ne kadar yakınsa, modelin performansı o kadar iyidir.
+
+### Bu Çalışmada Yapılanlar
+1. **Model Tahminleri:** 
+   - Modeller test veri setine uygulanmış ve `predict()` fonksiyonu ile tahmin olasılıkları hesaplanmıştır.
+
+2. **ROC Hesaplama:** 
+   - Tahmin edilen olasılıklar ve gerçek sınıf etiketleri, `pROC` kütüphanesinin `roc()` fonksiyonu ile ROC eğrisi oluşturmak için kullanılmıştır.
+
+3. **AUC Hesaplama:** 
+   - ROC eğrisinin altında kalan alan, `auc()` fonksiyonu ile hesaplanmıştır.
+
+```{r fig.height=8, fig.width=10, message=FALSE, warning=FALSE, include=FALSE}
+library(pROC)
+
+# Tahminler ve ROC işlemleri için liste oluştur
+roc_curves <- list()
+
+# Modellerin tahmin ve ROC işlemleri
+# 1. tree_hitters_full
+unpruned_test_prob <- predict(tree_hitters_full, newdata = test_data_transformed, type = "vector")
+roc_curves[["Tree"]] <- roc(test_data_transformed$Score, unpruned_test_prob[, 2])
+
+# 2. prune_hitters_full
+pruned_test_prob <- predict(prune_hitters_full, newdata = test_data_transformed, type = "vector")
+roc_curves[["Pruned Tree"]] <- roc(test_data_transformed$Score, pruned_test_prob[, 2])
+
+# 3. bag
+bag_test_prob <- predict(bag, newdata = test_data_transformed, type = "prob")
+roc_curves[["Bagging"]] <- roc(test_data_transformed$Score, bag_test_prob[, 2])
+
+# 4. rf
+rf_test_prob <- predict(rf, newdata = test_data_transformed, type = "prob")
+roc_curves[["Random Forest"]] <- roc(test_data_transformed$Score, rf_test_prob[, 2])
+
+# 5. model2_logistic
+logistic_test_prob <- predict(model2_logistic, newdata = test_data_transformed, type = "response")
+roc_curves[["Logistic Regression"]] <- roc(test_data_transformed$Score, logistic_test_prob)
+
+# 6. model_lda
+lda_test_prob <- predict(model_lda, newdata = test_data_transformed)$posterior[, 2]
+roc_curves[["LDA"]] <- roc(test_data_transformed$Score, lda_test_prob)
+
+# 7. model_qda
+qda_test_prob <- predict(model_qda, newdata = test_data_transformed)$posterior[, 2]
+roc_curves[["QDA"]] <- roc(test_data_transformed$Score, qda_test_prob)
+
+library(ggplot2)
+
+
+# ROC eğrilerini bir data.frame'e dönüştür
+roc_data <- do.call(rbind, lapply(names(roc_curves), function(model) {
+  roc_obj <- roc_curves[[model]]
+  data.frame(
+    Specificity = rev(roc_obj$specificities), 
+    Sensitivity = rev(roc_obj$sensitivities), 
+    Model = model,
+    AUC = as.numeric(auc(roc_obj))
+  )
+}))
+
+# AUC'yi model isimlerine ekle
+roc_data$Model <- paste0(roc_data$Model, "\n(AUC=", round(roc_data$AUC, 3), ")")
+
+# Manuel renk paleti (birbirinden uzak renkler)
+custom_colors <- c(
+  "red", "blue", "green", "purple", "orange", "brown", "pink"
+)
+```
+
+
+```{r echo=FALSE, fig.height=8, fig.width=10, message=FALSE, warning=FALSE}
+# ggplot ile ROC eğrilerini çiz
+ggplot(roc_data, aes(x = 1 - Specificity, y = Sensitivity, color = Model)) +
+  geom_line(size = 1.2) +
+  geom_abline(linetype = "dashed", color = "gray") +
+  scale_color_manual(values = custom_colors) + # Manuel renk paleti
+  labs(
+    title = "ROC Curves for All Models",
+    x = "1 - Specificity",
+    y = "Sensitivity",
+    color = "Models"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(size = 9), # Legend metin boyutunu ayarla
+    legend.title = element_text(size = 10),
+    legend.key.height = unit(0.6, "cm"), # Legend kutusu yüksekliğini ayarla
+    legend.key.width = unit(1.0, "cm") # Legend kutusu genişliğini ayarla
+  )
+
+```
+1. **En Yüksek Performans:** 
+   - **QDA (AUC=0.951)** ve **LDA (AUC=0.946)** modelleri en iyi sonuçları vermiştir ve yüksek doğruluk sergilemektedir.
+
+2. **Ensemble Modeller:**
+   - **Bagging (AUC=0.943)** ve **Random Forest (AUC=0.938)**, güçlü performans göstermiştir ve dengeli sonuçlar sunmuştur.
+
+3. **Orta Performans:**
+   - **Logistic Regression (AUC=0.909)** ve **Unpruned Tree (AUC=0.888)** orta düzeyde başarılıdır.
+
+4. **Düşük Performans:**
+   - **Pruned Tree (AUC=0.862)** diğer modellere kıyasla düşük performans sergilemiş, budama işlemi modelin genelleme yeteneğini azaltmıştır.
+   
+## Sınıflandırma Sonuçlarının Değerlendirilmesi
+```{r echo=FALSE}
+list(
+  "Unpruned Classification Tree" = unpruned_results_df,
+  "Pruned Classification Tree" = pruned_results_df,
+  "Bagging Model" = bag_results_df,
+  "Random Forest" = rf_results_df,
+  "Logistic Regression (GLM)" = glm_results_df,
+  "Linear Discriminant Analysis (LDA)" = lda_results_df,
+  "Quadratic Discriminant Analysis (QDA)" = qda_results_df
+)
+```
+
+### ROC-AUC Değerleri ve Genel Performans:
+Önceki ROC eğrisi grafiği incelendiğinde, **QDA (AUC=0.951)** en yüksek AUC değerine sahip modeldir. **LDA (AUC=0.946)** ve **Bagging (AUC=0.943)** modelleri de yüksek AUC değerleriyle dikkat çekmiştir. **Random Forest (AUC=0.938)**, **Logistic Regression (AUC=0.909)** ve **Unpruned Tree (AUC=0.888)** sırasıyla bu modelleri takip etmiştir. **Pruned Tree (AUC=0.862)** ise diğer modellere göre daha düşük bir performans göstermiştir.
+
+### Eğitim ve Test Performanslarının Karşılaştırılması:
+1. **QDA (Quadratic Discriminant Analysis):**
+   - Eğitim (F1: 0.916, Accuracy: 0.917) ve test setinde (F1: 0.898, Accuracy: 0.894) tutarlı sonuçlar vermiştir. Eğitim ve test metrikleri arasındaki farkın düşük olması, modelin genelleme yeteneğini öne çıkarır.
+
+2. **LDA (Linear Discriminant Analysis):**
+   - Eğitim (F1: 0.883, Accuracy: 0.881) ve test setinde (F1: 0.846, Accuracy: 0.830) QDA’dan sonra en güvenilir sonuçları vermiştir.
+
+3. **Random Forest:**
+   - Eğitim setinde mükemmel sonuçlar (F1: 1.0, Accuracy: 1.0) elde etmiştir, ancak test setinde performansı (F1: 0.898, Accuracy: 0.894) eğitim setine göre daha düşük kalmıştır. Bu fark, modelin aşırı öğrenme yapmış olabileceğini göstermektedir.
+
+4. **Bagging:**
+   - Eğitim setinde tüm metriklerde mükemmel sonuçlar (F1, Accuracy: 1.0) vermesine rağmen test setinde daha düşük performans göstermiştir (F1: 0.833, Accuracy: 0.830). Bu da genelleme yeteneğinin sınırlı olduğunu göstermektedir.
+
+5. **Pruned ve Unpruned Trees:**
+   - Ağaç tabanlı modeller benzer sonuçlar vermiştir. Ancak her iki model de test setinde diğer modellere göre daha düşük performans göstermiştir.
+
+6. **Logistic Regression:**
+   - Eğitim ve test setinde dengeli sonuçlar vermiştir. Ancak test setinde (F1: 0.824, Accuracy: 0.809) performansı QDA ve LDA’ya göre daha düşüktür.
+
+### Sonuç:
+- **QDA**, eğitim ve test metrikleri arasındaki düşük farkı ve AUC skorundaki üstünlüğü (0.951) sayesinde en güvenilir model olarak seçilmiştir.
+- **LDA**, benzer şekilde genelleme yeteneği yüksek olup QDA’dan sonra en güvenilir modeldir.
+- **Random Forest** ve **Bagging**, eğitim setinde mükemmel sonuçlar vermiş olsa da, test seti performanslarındaki düşüş nedeniyle genelleme açısından daha az güvenilirdir.

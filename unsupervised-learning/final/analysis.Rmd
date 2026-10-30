@@ -1,0 +1,912 @@
+---
+title: "DSM 5008 Denetimsiz İstatistiksel Öğrenme Final Ödevi"
+author: "Tarık Tuna Taşaltı"
+subtitle: ""
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width = 5, fig.height = 3, echo = TRUE)
+```
+
+```{r include=FALSE}
+# Package names
+packages <- c("corrplot","stats","cluster","factoextra", "clustertend", "NbClust", "mclust", "dbscan", "fpc", "clValid","hopkins","ggplot2","gridExtra","caret","reshape2")
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+##veri seti-tan?mlay?c? istatistikler
+getwd()
+raw_data<-read.csv("data.csv",sep = ";", header = TRUE, quote = "", fill = TRUE)
+```
+
+```{r include=FALSE}
+dataWithLabel <-raw_data[,c(-1)]
+raw_data <- raw_data[,c(-1,-2)]
+# Karakter olarak okunan kolonları numeric tipine çevirmek için bir fonksiyon tanımlayın
+# Tüm sütunları karakter türünden numeric türüne dönüştürün
+convert_to_numeric <- function(column) {
+  as.numeric(gsub(",", ".", column))
+}
+```
+
+# ÖZET
+
+Bu çalışmada, meme dokusunun elektriksel empedans ölçümlerine dayanan bir kümeleme analizi gerçekleştirilmiştir. Başlangıçta meme dokusunun altı farklı türünü sınıflandırmak için kullanılan veri seti, veri setinin açıklamasında belirtildiği üzere, fibro-adenom, mastopati ve glandüler sınıflarının "mix" sınıfı altında birleştirilmesiyle dört sınıfa indirgenmiştir. Bu sınıfların ayrımının zor olduğu ve analizin amaçları doğrultusunda kritik olmadığı durumlarda, sınıfların birleştirilmesi tercih edilmiştir. Böylece, sınıflar karsinom (car), birleştirilmiş sınıf (fibro-adenom, mastopati ve glandüler - mix), bağ doku (con) ve yağ dokusu (adi) olarak yeniden tanımlanmış ve analiz bu dört sınıf üzerinden gerçekleştirilmiştir. Veri setindeki dengesizliklerden dolayı scale edilmiş veriler kullanılmış ve Hopkins istatistiği doğrultusunda PCA ile elde edilen veriler tercih edilmiştir.
+
+Sonuç olarak, kmedoids algoritması kullanılarak k=4 küme sayısı ile yapılan analizde modelin genel doğruluğu %70.75 olarak elde edilmiştir. Bu doğruluğu elde etmek için veri setindeki fibro-adenom, mastopati ve glandüler sınıfları "mix" sınıfı altında birleştirilmiştir. Modelin performansı, sınıflar arasındaki doğruluk oranlarıyla değerlendirilmiş ve özellikle fibro-adenom, mastopati ve glandüler sınıf (mix) ile yağ dokusu (adi) sınıflarında yüksek doğruluk elde edilmiştir. Ancak, bağ doku (con) sınıfında modelin performansı diğer sınıflara göre daha düşüktür, bu da modelin iyileştirilmesi gereken bir alan olarak belirlenmiştir.
+
+# GİRİŞ
+
+Bu çalışma, meme dokusu örneklerinin elektriksel empedans ölçümlerine dayanan bir kümelenme analizini sunmaktadır. Analizde, 9 Mayıs 2010 tarihinde UCI Machine Learning Repository'ya eklenen "Breast Tissue" isimli veri seti kullanılmıştır. Bu veri seti, yeni alınmış meme dokusu örneklerinden elde edilen ölçümleri içermektedir. Meme dokusunun çeşitli tiplerini ayırt etmek amacıyla oluşturulmuştur ve sağlık ile tıp alanında önemli uygulamalara sahiptir.
+
+## VERİ SETİ ÖZELLİKLERİ
+
+Breast Tissue veri seti, 106 örnekten oluşan çok değişkenli bir veri setidir. Veri setinde yer alan örnekler, meme dokusundan yeni alınmış doku örneklerine ait elektriksel empedans ölçümleridir. Ölçümler, 15.625, 31.25, 62.5, 125, 250, 500 ve 1000 KHz frekanslarında yapılmıştır. Bu frekanslarda elde edilen empedans ölçümleri, (gerçek, -hayali) düzlemde çizildiğinde empedans spektrumunu oluşturur ve bu spektrumdan meme dokusu özellikleri hesaplanır.
+
+Veri setinde yer alan özellikler şunlardır:
+
+I0: Sıfır frekansta empedans (ohm) PA500: 500 KHz'deki faz açısı HFS: Faz açısının yüksek frekans eğimi DA: Spektral uçlar arasındaki empedans mesafesi AREA: Spektrum altındaki alan A/DA: DA ile normalize edilmiş alan MAX IP: Spektrumun maksimumu DR: I0 ile maksimum frekans noktasının gerçek kısmı arasındaki mesafe P: Spektral eğrinin uzunluğu
+
+Veri seti, meme dokusunun altı farklı türünü sınıflandırmak için kullanılabilir: karsinom (car), fibro-adenom (fad), mastopati (mas), glandüler (gla), bağ doku (con) ve yağ dokusu (adi). Bunun yanı sıra, fibro-adenom, mastopati ve glandüler sınıflarının birleştirilmesiyle elde edilen dört sınıfı sınıflandırmak için de kullanılabilir. Bu birleşim, bu sınıfların ayrımının zor olduğu ve bu ayrımın analizin amaçları doğrultusunda kritik olmadığı durumlarda tercih edilir. Böylece, elde edilen dört sınıf şu şekildedir:Karsinom (car) Birleştirilmiş sınıf (fibro-adenom, mastopati ve glandüler) Bağ doku (con) Yağ dokusu (adi)
+
+## VERİ SETİNİN İSTATİSTİKSEL ÖZELLİKLERİ
+
+```{r fig.height=5, fig.width=10, warning=FALSE}
+# Tüm sütunlar için dönüşüm uygulayın
+raw_data[] <- lapply(raw_data, convert_to_numeric)
+dim(raw_data)
+summary(raw_data)
+apply(raw_data, 2, sd)
+```
+
+-   **I0:** Sıfır frekansta empedans, 103 ile 2800 ohm arasında değişmektedir (ortalama 784.3 ohm). Yüksek varyasyon, farklı doku türleri arasındaki empedans farkını gösterir.
+
+-   **PA500:** 500 KHz'deki faz açısı, 0.01239 ile 0.35832 arasında değişmektedir (ortalama 0.12013). Düşük değerler, faz açısının ölçümde hassas olduğunu gösterir.
+
+-   **HFS:** Faz açısının yüksek frekans eğimi, -0.06632 ile 0.46775 arasında değişmektedir (ortalama 0.11469). Negatif minimum değer, bazı dokuların negatif faz eğimine sahip olduğunu gösterir.
+
+-   **DA:** Spektral uçlar arasındaki empedans mesafesi, 19.65 ile 1063.44 arasında değişmektedir (ortalama 190.57). Geniş aralık, empedans mesafesinin dokular arasında farklılık gösterdiğini belirtir.
+
+-   **AREA:** Spektrum altındaki alan, 70.43 ile 174480.48 arasında değişmektedir (ortalama 7335.16). Büyük varyasyon, dokuların empedans spektrum alanında büyük farklılıklar olduğunu gösterir.
+
+-   **A/DA:** DA ile normalize edilmiş alan, 1.596 ile 164.072 arasında değişmektedir (ortalama 23.474). Bu oran, spektrum alanının empedans mesafesine göre değişkenliğini gösterir.
+
+-   **MAX IP:** Spektrumun maksimumu, 7.969 ile 436.100 arasında değişmektedir (ortalama 75.381). Yüksek maksimum değerler, bazı dokuların empedans spektrumunda yüksek zirvelere sahip olduğunu gösterir.
+
+-   **DR:** I0 ile maksimum frekans noktasının gerçek kısmı arasındaki mesafe, -9.258 ile 977.552 arasında değişmektedir (ortalama 166.711). Bu mesafe, farklı dokular arasındaki empedans farkını vurgular.
+
+-   **P:** Spektral eğrinin uzunluğu, 125.0 ile 2896.6 arasında değişmektedir (ortalama 810.6). Uzun spektral eğriler, dokuların empedans özelliklerinin geniş bir frekans aralığında değiştiğini gösterir.
+
+```{r echo=FALSE, fig.height=5, fig.width=10}
+# Ham veri boxplot'u
+raw_boxplot <- ggplot(stack(as.data.frame(raw_data)), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  labs(title = "Raw Data Boxplot", x = "Variables", y = "Values") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  coord_flip()
+data=raw_data
+data=scale(data)
+# Ölçeklenmiş veri boxplot'u
+scaled_boxplot <- ggplot(stack(as.data.frame(data)), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  labs(title = "Scaled Data Boxplot", x = "Variables", y = "Values") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  coord_flip()
+grid.arrange(raw_boxplot, scaled_boxplot, ncol = 1)
+```
+
+Grafik, Breast Tissue veri setindeki ham ve ölçeklendirilmiş verilerin boxplot'larını göstermektedir. Ham veride AREA değişkeni çok yüksek değerlere sahip olup, sağa yatık bir dağılım sergilemektedir. Bu, diğer değişkenlerin daha düşük ve sıkışık görünmesine neden olur. Örneğin, PA500, HFS ve DA gibi değişkenler daha dar aralıklarda değişmekte ve bazıları sola yatık dağılımlar göstermektedir. Parametreler arasındaki bu büyük değer farklılıkları, verilerin ölçeklendirilmesini zorunlu kılmaktadır.
+
+Ölçeklendirilmiş veri grafiğinde, tüm değişkenler aynı ölçeğe getirilmiş ve daha dengeli bir dağılım sergilemiştir. Bu sayede, değişkenler arasındaki karşılaştırma daha net yapılabilmektedir. Ölçeklendirme, verilerin normalleştirilmesi sayesinde her bir değişkenin istatistiksel özelliklerinin daha açık bir şekilde analiz edilmesine olanak tanır. Parametreler arasındaki bu dengesizlikler nedeniyle verilerin ölçeklendirilmesi, özellikle kümelenme analizleri gibi çok değişkenli analizlerde gerekli bir adımdır.
+
+```{r fig.height=4, fig.width=8}
+corr=cor(data, method = "pearson")
+corrplot.mixed(corr,upper="pie")
+```
+
+Bu grafik, Breast Tissue veri setindeki değişkenler arasındaki korelasyonları göstermektedir. I0 ve P arasında çok yüksek bir pozitif korelasyon (0.99) dikkat çekerken, DA ve DR (0.97), I0 ve DA (0.82) ile Max.IP ve I0 (0.82) arasında da güçlü pozitif korelasyonlar bulunmaktadır. Bu, bu değişkenlerin birlikte arttığını gösterir. Öte yandan, PA500 ve diğer değişkenler arasında genellikle düşük ve negatif korelasyonlar mevcuttur; örneğin, PA500 ile I0 arasında -0.39'luk bir korelasyon vardır. HFS ve DA arasında ise düşük pozitif bir korelasyon (0.11) bulunmaktadır. Bu korelasyon yapısı, I0, DA ve Max.IP gibi değişkenlerin birlikte hareket ettiğini, PA500 ve HFS'nin ise diğer değişkenlerle daha bağımsız olduğunu göstermektedir. Bu bilgiler, PCA (Temel Bileşenler Analizi) ve clustering çalışmalarında dikkate alınması gereken önemli bir temel sağlar.
+
+# KULLANILACAK VERİNİN BELİRLENMESİ
+
+Bu bölümde, ham veri, ölçeklenmiş veri ve PCA (Temel Bileşenler Analizi) ile elde edilen veri arasından hangisinin kullanılacağı ve uzaklık metriğinin belirlenmesi değerlendirilecektir.
+
+## TEMEL BİLEŞENLER ANALİZİ (PRINCIPAL COMPONENT ANALYSIS)
+
+```{r}
+##Temel Bile?enler Analizi
+data.pca <- prcomp(data, center = TRUE, scale. = TRUE)
+summary(data.pca)
+(data.pca$sdev)^2 #?zde?erler
+```
+
+Breast Tissue veri setindeki PCA analizi sonuçlarına göre, ilk iki bileşen (PC1 ve PC2) toplam varyansın %80'ini açıklamaktadır. İlk iki bileşenin kümülatif varyansı %80.82'ye ulaşmaktadır. Ayrıca, ilk iki bileşenin öz değerleri de 1'in üzerindedir, bu da bu bileşenlerin önemli olduğunu göstermektedir. Bu bilgiler ışığında, analizlerde 2 bileşenli PCA kullanımı dikkate alınmaktadır.
+
+```{r}
+cor(data.pca$x[,1],data.pca$x[,2])
+```
+
+İlk iki bileşen arasındaki korelasyonun 7.529827e-17 gibi çok düşük bir değer olması, bu bileşenlerin birbirinden bağımsız olduğunu gösterir.
+
+```{r}
+res.var <- get_pca_var(data.pca)
+```
+
+```{r echo=FALSE, fig.height=3, fig.width=6}
+corplot=corrplot(res.var$cos2, is.corr=FALSE) # Quality of representation 
+```
+
+Bu grafik, Breast Tissue veri setindeki değişkenlerin farklı bileşenlerle (Dimension 1 ila Dimension 9) olan cos2 değerlerini, yani temsil kalitesini göstermektedir. Grafik, Dimension 1 ve Dimension 2'nin I0, DA, Area, A.DA, Max.IP, DR ve P gibi tüm değişkenleri yüksek temsil kalitesiyle modellediğini ortaya koymaktadır. Özellikle, bu iki bileşen tüm değişkenler için yüksek cos2 değerlerine sahip olup, bu değişkenlerin iyi temsil edildiğini göstermektedir. Bu nedenle, analizlerde iki bileşenli PCA kullanmanın veri setinin yapısını etkili bir şekilde yansıttığını söylemek mümkündür.
+
+```{r echo=FALSE, fig.height=3, fig.width=8}
+# Birinci eksen için katkı grafiği
+contrib_plot1 <- fviz_contrib(data.pca, choice = "var", axes = 1, top = 9) +
+  labs(subtitle = "Contribution to PC1")
+
+# İkinci eksen için katkı grafiği
+contrib_plot2 <- fviz_contrib(data.pca, choice = "var", axes = 2, top = 9) +
+  labs(subtitle = "Contribution to PC2")
+
+# Grafiklerin birleştirilmesi (2 satır, 1 sütun)
+grid.arrange(contrib_plot1, contrib_plot2, nrow = 1)
+```
+
+Bu grafik, PCA'deki Dimension 1 ve Dimension 2'ye yapılan değişken katkılarını (contribution) göstermektedir. Dimension 1'de DA, Max.IP, P ve I0 en yüksek katkıyı yaparken, Dimension 2'de PA500 ve HFS en yüksek katkıyı sağlamaktadır. Bu contribution değerleri, her bileşenin toplam varyansının ne kadarının belirli değişkenler tarafından açıklandığını yansıtır.
+
+```{r fig.height=3, fig.width=8}
+##Graph of individuals. Individuals with a similar profile are grouped together
+fviz_pca_ind(data.pca,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+)
+```
+
+Bu grafik, PCA analizi sonucunda bireylerin Dimension 1 ve Dimension 2 üzerindeki dağılımını ve cos2 değerlerini göstermektedir. Cos2 değerleri, bireylerin bu iki boyutta ne kadar iyi temsil edildiğini gösterir. Kırmızı renkler yüksek cos2 değerlerini, mavi renkler düşük cos2 değerlerini ifade eder. Örneğin, 103 numaralı birey yüksek cos2 değeriyle Dimension 1'de çok iyi temsil edilmektedir. Orta seviyede temsil edilen bireylere örnek olarak, 15 ve 96 numaralı bireyler verilebilir. Düşük temsil kalitesine sahip bireylerden biri ise 1 numaralı bireydir.
+
+```{r}
+set.seed(123)
+hopkins(raw_data, nrow(data)-1)
+hopkins(data, nrow(data)-1)
+hopkins(data.pca$x[,1:2], nrow(data)-1)
+```
+
+Hopkins testi sonuçlarına göre, ham veri için elde edilen Hopkins değeri 0.014, verilerin çok güçlü bir şekilde kümelenmiş olduğunu gösterir; ancak, ham verinin dengesiz oluşu nedeniyle bu sonuç kullanışlı değildir. Ölçeklenmiş veri için Hopkins değeri 0.709, verilerin kümelenmiş yapıya sahip olduğunu belirtirken, PCA'den elde edilen ilk iki bileşen için Hopkins değeri 0.898, çok güçlü bir kümelenme eğilimini ortaya koyar. Bu nedenle, çalışmanın kalanında kullanılacak modeller, PCA ile elde edilen bileşenlerle gerçekleştirilecektir.
+
+## UZAKLIK (DISTANCE) METRİĞİNİN BELİRLENMESİ
+
+```{r echo=FALSE, fig.height=6, fig.width=9}
+dist_euc <- get_dist(data, stand = TRUE, method = "euclidean")
+euc_plot <- fviz_dist(dist_euc) +
+  labs(subtitle = "Euclidean Distance")
+dist_man <- get_dist(data, stand = TRUE, method = "manhattan")
+man_plot <- fviz_dist(dist_man) +
+  labs(subtitle = "Manhattan Distance")
+dist_euc_pca <- get_dist(data.pca$x[,1:2], stand = TRUE, method = "euclidean")
+euc_plot_pca <- fviz_dist(dist_euc_pca) +
+  labs(subtitle = "Euclidean Distance PCA")
+
+dist_man_pca <- get_dist(data.pca$x[,1:2], stand = TRUE, method = "manhattan")
+man_plot_pca <- fviz_dist(dist_man_pca) +
+  labs(subtitle = "Manhattan Distance PCA")
+
+# Grafiklerin birleştirilmesi (2 satır, 1 sütun)
+grid.arrange(euc_plot, man_plot,euc_plot_pca,man_plot_pca, nrow = 2,ncol=2)
+```
+
+Dört grafik değerlendirildiğinde, PCA ile elde edilen veriler kullanıldığında daha net ve ayrışmış kümeler görüldüğü fark edilmektedir. Özellikle Manhattan Distance PCA (alt sağ grafik) en belirgin kümeleri ve daha iyi ayrışmayı göstermektedir. Verideki Area değişkenindeki aykırı değerler ve 103 numaralı gözlemin diğer gözlemlerden uzaklığı, Manhattan Distance ile daha iyi yönetilmesi beklenmektedir çünkü Manhattan Distance'ın, Euclidean Distance'a kıyasla aykırı değerlere karşı daha dirençli olduğu bilinmektedir. Bu nedenle, çalışmanın kalanında PCA ile elde edilen veriler ve Manhattan Distance kullanılacaktır. Bu seçim, önceki bölümde yapılan PCA tercihinin doğru olduğunu ve analizlerde sağlam sonuçlar elde etmek için uygun bir karar olduğunu desteklemektedir.
+
+# FARKLI MODELLERİN DENENMESİ
+
+## K-MEANS
+
+### K-MEANS KÜME (CLUSTER) SAYISININ BELİRLENMESİ
+
+```{r fig.height=2, fig.width=3, include=FALSE}
+nb <- NbClust(data.pca$x[,1:2], distance = "manhattan", min.nc = 2,
+              max.nc = 9, method = "kmeans")
+```
+
+**NbClusta Göre Önerilen Kümelerin Önerilme Sayısı**
+
+| k=2 | k=3 | k=4 | k=5 | k=6 | k=7 | k=8 | k=9 |
+|-----|-----|-----|-----|-----|-----|-----|-----|
+| 7   | 2   | 13  | 0   | 0   | 0   | 1   | 0   |
+
+```{r include=FALSE}
+# PCA sonuçları ile verinin ilk iki bileşeni
+data_pca <- data.pca$x[,1:2]
+
+# WSS grafiği
+wss_plot <- fviz_nbclust(data_pca, kmeans, nstart = 25, iter.max = 200, method = "wss") +
+  labs(subtitle = "Elbow method")
+
+# Silhouette grafiği
+sil_plot <- fviz_nbclust(data_pca, kmeans, nstart = 25, iter.max = 200, method = "silhouette") +
+  labs(subtitle = "Silhouette method")
+
+# Gap Statistics grafiği
+gap_plot <- fviz_nbclust(data_pca, kmeans, nstart = 25, method = "gap_stat", nboot = 500) +
+  labs(subtitle = "Gap statistic method")
+```
+
+```{r echo=FALSE, fig.height=6, fig.width=4, message=FALSE, warning=FALSE}
+# Grafiklerin birleştirilmesi
+grid.arrange(wss_plot, sil_plot, gap_plot, ncol = 1)
+
+```
+
+Elbow metoduyla yapılan analize göre, 2 ve 7 küme sayısı arasında belirgin bir dirsek noktası tespit edildi. Ancak, Silhouette ve Gap statistic metodlarından elde edilen sonuçlar farklılık gösterdi. Silhouette metodu, 2, 3 ve 4 küme sayısını önerirken, Gap statistic değerleri 4 ve daha fazla küme sayısı için yüksek değerler verdi. Nbclust analizi ise 24 öneri arasından 13'ünün 4 küme sayısını desteklediğini ortaya koydu. Bu çeşitlilik, her dört metodun veriye farklı açılardan yaklaştığını gösterir. Dolayısıyla, şimdilik en uygun k değeri olarak 4 seçilmiş olsa da, diğer k değerlerinin de modellerin geliştirilip gözlemlenmesi önemlidir. Bu nedenle, diğer k sayıları da çalışma kapsamında değerlendirilecektir.
+
+### K-MEANS MODELİN GELİŞTİRİLMESİ
+
+```{r}
+set.seed(123)
+km_data_pca_2 <- kmeans(data.pca$x[,1:2], 2, nstart = 25) 
+km_data_pca_3 <- kmeans(data.pca$x[,1:2], 3, nstart = 25) 
+km_data_pca_4 <- kmeans(data.pca$x[,1:2], 4, nstart = 25) 
+km_data_pca_5 <- kmeans(data.pca$x[,1:2], 5, nstart = 25) 
+km_data_pca_6 <- kmeans(data.pca$x[,1:2], 6, nstart = 25) 
+km_data_pca_7 <- kmeans(data.pca$x[,1:2], 7, nstart = 25) 
+```
+
+```{r echo=FALSE, fig.height=6, fig.width=15}
+plot_2 <- fviz_cluster(km_data_pca_2, data = data,
+                       ellipse.type = "convex", # Concentration ellipse
+                       star.plot = TRUE, # Add segments from centroids to items
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_minimal(),
+                       show.clust.cent = TRUE, # Show cluster centers
+                       geom = "point" # Hide labels
+) + ggtitle("k=2")
+
+plot_3 <- fviz_cluster(km_data_pca_3, data = data,
+                       ellipse.type = "convex", # Concentration ellipse
+                       star.plot = TRUE, # Add segments from centroids to items
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_minimal(),
+                       show.clust.cent = TRUE, # Show cluster centers
+                       geom = "point" # Hide labels
+) + ggtitle("k = 3")
+
+plot_4 <- fviz_cluster(km_data_pca_4, data = data,
+                       ellipse.type = "convex", # Concentration ellipse
+                       star.plot = TRUE, # Add segments from centroids to items
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_minimal(),
+                       show.clust.cent = TRUE, # Show cluster centers
+                       geom = "point" # Hide labels
+) + ggtitle("k=4")
+
+plot_5 <- fviz_cluster(km_data_pca_5, data = data,
+                       ellipse.type = "convex", # Concentration ellipse
+                       star.plot = TRUE, # Add segments from centroids to items
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_minimal(),
+                       show.clust.cent = TRUE, # Show cluster centers
+                       geom = "point" # Hide labels
+) + ggtitle("k = 5")
+
+plot_6 <- fviz_cluster(km_data_pca_6, data = data,
+                       ellipse.type = "convex", # Concentration ellipse
+                       star.plot = TRUE, # Add segments from centroids to items
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_minimal(),
+                       show.clust.cent = TRUE, # Show cluster centers
+                       geom = "point" # Hide labels
+) + ggtitle("k = 6")
+plot_7 <- fviz_cluster(km_data_pca_7, data = data,
+                       ellipse.type = "convex", # Concentration ellipse
+                       star.plot = TRUE, # Add segments from centroids to items
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_minimal(),
+                       show.clust.cent = TRUE, # Show cluster centers
+                       geom = "point" # Hide labels
+) + ggtitle("k = 7")
+
+# Combining the plots
+grid.arrange(plot_2, plot_3, plot_4, plot_5, plot_6,plot_7, ncol = 3)
+
+```
+
+**Between-Groups Sum of Squares / Total Sum of Squares**
+
+| k=2   | k=3   | k=4   | k=5   | k=6   | k=7   |
+|-------|-------|-------|-------|-------|-------|
+| %53.1 | %69.2 | %81.1 | %84.6 | %86.3 | %92.6 |
+
+k=2 ve k=3 için yapılan kümelenmeler, yeterince iyi ayrışmış gözükmesine rağmen, BGSS/TSS (Between-Groups Sum of Squares / Total Sum of Squares) değeri oldukça düşüktür. k=7 için yapılan kümelenmede BGSS/TSS değeri yüksek olmasına rağmen, aykırı (outlier) bir değer tek başına kümelenmiştir. Bu nedenle, k=4, k=5 ve k=6 değerleri için yapılan analizlerde, yüksek BGSS/TSS değeri ve küme içi homojenliğin sağlandığı, ancak kümeler arası heterojenlik konusunda bazı şüpheler duyulmuştur. Yine de, önceki bölümde seçilen k=4'e sadık kalınarak, modellerin kıyaslanması kısmında bu değerle model değerlendirilmeye alınacaktır.
+
+## K-MEDOIDS
+
+### K-MEDOIDS KÜME (CLUSTER) SAYISININ BELİRLENMESİ
+
+```{r fig.height=8, fig.width=8, message=FALSE, warning=FALSE, include=FALSE}
+# WSS grafiği
+wss_plot <- fviz_nbclust(data.pca$x[,1:2], pam, method = "wss") +
+  labs(subtitle = "Elbow method")
+
+# Silhouette grafiği
+sil_plot <- fviz_nbclust(data.pca$x[,1:2], pam, method = "silhouette") +
+  labs(subtitle = "Silhouette method")
+
+# Gap Statistics grafiği
+gap_plot <- fviz_nbclust(data.pca$x[,1:2], pam, method = "gap_stat", nboot = 500) +
+  labs(subtitle = "Gap statistic method")
+```
+
+```{r fig.height=6, fig.width=4, message=FALSE, warning=FALSE}
+# Grafiklerin birleştirilmesi
+grid.arrange(grobs = list(wss_plot, sil_plot, gap_plot), ncol = 1)
+```
+
+Elbow, Silhouette ve Gap Statistic yöntemlerine göre yapılan analizlerde, optimal küme sayısının belirlenmesi için çeşitli bulgular elde edilmiştir. Elbow metodunda, 2, 4 ve 7 küme sayılarında belirgin dirsek noktaları görülmektedir. Silhouette metoduna göre, 2, 3 ve 4 küme sayıları önerilmektedir; ancak tüm bu kümelerde benzer silhouette değerleri elde edildiği için belirleyici bir kriter değildir. Gap Statistic metodunda ise 4 ve üzeri küme sayıları yüksek değerlere sahiptir. Bu bilgiler ışığında, en uygun k değeri olarak 4 seçilmiştir, çünkü bu küme sayısı yöntemlerin çoğunluğu tarafından desteklenmekte ve verinin yapısını daha ayrıntılı bir şekilde temsil etmektedir.
+
+### K-MEDOIDS MODELİN GELİŞTİRİLMESİ
+
+```{r}
+set.seed(123)
+pam_data_pca_2 <- pam(data.pca$x[,1:2], 2)
+pam_data_pca_3 <- pam(data.pca$x[,1:2], 3)
+pam_data_pca_4 <- pam(data.pca$x[,1:2], 4)
+pam_data_pca_5 <- pam(data.pca$x[,1:2], 5)
+pam_data_pca_6 <- pam(data.pca$x[,1:2], 6)
+pam_data_pca_7 <- pam(data.pca$x[,1:2], 7)
+```
+
+```{r echo=FALSE, fig.height=4, fig.width=12}
+
+# PAM clustering and plotting for pam_data_pca_2
+plot_2 <- fviz_cluster(pam_data_pca_2,
+                       ellipse.type = "convex", # Concentration ellipse
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_classic(),
+                       geom = "point" # Hide labels
+) + ggtitle("k = 2")
+
+# PAM clustering and plotting for pam_data_pca_3
+plot_3 <- fviz_cluster(pam_data_pca_3,
+                       ellipse.type = "convex", # Concentration ellipse
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_classic(),
+                       geom = "point" # Hide labels
+) + ggtitle("k = 3")
+
+# PAM clustering and plotting for pam_data_pca_4
+plot_4 <- fviz_cluster(pam_data_pca_4,
+                       ellipse.type = "convex", # Concentration ellipse
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_classic(),
+                       geom = "point" # Hide labels
+) + ggtitle("k = 4")
+
+# PAM clustering and plotting for pam_data_pca_5
+plot_5 <- fviz_cluster(pam_data_pca_5,
+                       ellipse.type = "convex", # Concentration ellipse
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_classic(),
+                       geom = "point" # Hide labels
+) + ggtitle("k = 5")
+
+# PAM clustering and plotting for pam_data_pca_6
+plot_6 <- fviz_cluster(pam_data_pca_6,
+                       ellipse.type = "convex", # Concentration ellipse
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_classic(),
+                       geom = "point" # Hide labels
+) + ggtitle("k = 6")
+
+# PAM clustering and plotting for pam_data_pca_7
+plot_7 <- fviz_cluster(pam_data_pca_7,
+                       ellipse.type = "convex", # Concentration ellipse
+                       repel = TRUE, # Avoid label overplotting (slow)
+                       ggtheme = theme_classic(),
+                       geom = "point" # Hide labels
+) + ggtitle("k = 7")
+
+# Combining the plots (3x2 layout)
+grid.arrange(plot_2, plot_3, plot_4, plot_5,plot_6,plot_7, nrow = 2, ncol = 3)
+```
+
+|           | k=2      | k=3      | k=4       | k=5       | k=6       | k=7       |
+|-----------|----------|----------|-----------|-----------|-----------|-----------|
+| **Build** | 1.505966 | 1.247888 | 1.0593448 | 0.8925424 | 0.7875886 | 0.6837244 |
+| **Swap**  | 1.396679 | 1.109380 | 0.9095517 | 0.7577535 | 0.6805643 | 0.6068133 |
+
+Kmedoids (PAM) algoritmasıyla gerçekleştirilen kümelenme analizine ait sonuçlar incelendiğinde, farklı k değerleri için "build" ve "swap" maliyetleri göz önüne alınmıştır. k=2 ve k=3 için yapılan kümelenmelerde kümeler yeterince iyi ayrışmış gözükse de, build ve swap maliyetleri yüksektir, bu da küme içi tutarlılığın zayıf olduğunu gösterir. k=7 için yapılan kümelenmede, build ve swap maliyetleri düşük olmasına rağmen, aykırı (outlier) bir değer tek başına kümelenmiştir. k=4, k=5 ve k=6 değerleri için yapılan analizlerde, build ve swap maliyetlerinin düşük olduğu ve küme içi homojenliğin sağlandığı gözlemlenmiştir; ancak, bazı kümeler arası heterojenlik konusunda şüpheler bulunmaktadır. Bu bilgiler ışığında, k=4 değeri, düşük build ve swap maliyetleri ile kabul edilebilir bir homojenlik sunduğu için uygun bir seçim olarak değerlendirilmektedir. Bu nedenle, başta belirlenen k=4'e sadık kalınarak çalışmanın kalanında bu değer kullanılacaktır
+
+## HİYERARŞİK KÜMELEME (HIERARCHICAL CLUSTERING)
+
+### HİYERARŞİK KÜMELEME KÜME (CLUSTER) SAYISININ BELİRLENMESİ
+
+```{r fig.height=2, fig.width=3, include=FALSE}
+nb <- NbClust(data.pca$x[,1:2], distance = "manhattan", min.nc = 2,
+              max.nc = 9, method = "average")
+```
+
+**NbClusta Göre Kümelerin Önerilme Sayısı**
+
+| k=2 | k=3 | k=4 | k=5 | k=6 | k=7 | k=8 | k=9 |
+|-----|-----|-----|-----|-----|-----|-----|-----|
+| 7   | 11  | 1   | 2   | 0   | 1   | 0   | 2   |
+
+```{r fig.height=6, fig.width=4, message=FALSE, warning=FALSE, include=FALSE}
+# Gap Statistics hesaplaması
+gap_stat <- clusGap(data.pca$x[,1:2], FUN = hcut, nstart = 25, K.max = 10, B = 500)
+
+# WSS grafiği
+wss_plot <- fviz_nbclust(data.pca$x[,1:2], FUN = hcut, method = "wss") + ggtitle("WSS Method")
+
+# Silhouette grafiği
+sil_plot <- fviz_nbclust(data.pca$x[,1:2], FUN = hcut, method = "silhouette") + ggtitle("Silhouette Method")
+
+# Gap Statistics grafiği
+gap_plot <- fviz_gap_stat(gap_stat) + ggtitle("Gap Statistics")
+```
+
+```{r fig.height=6, fig.width=4, message=FALSE, warning=FALSE}
+# Grafiklerin birleştirilmesi
+grid.arrange(wss_plot, sil_plot, gap_plot, ncol = 1)
+```
+
+WSS, Silhouette ve Gap Statistic yöntemlerine göre yapılan analizler ve D indeksi sonuçları, küme sayısının belirlenmesi için çeşitli bulgular sunmaktadır. WSS metodunda, 2 küme sayısında belirgin bir dirsek noktası görülmektedir. Silhouette metodunda, 2 küme en yüksek ortalama silhouette genişliğine sahip olsa da, 3 ve 4 küme sayıları da benzer değerlere sahip olduğundan belirleyici değildir. Gap Statistic metodunda ise 4 ve üzeri küme sayıları yüksek değerlere sahiptir. D indeksine göre ise 7 yöntem 2 kümeyi, 11 yöntem 3 kümeyi ve 1 yöntem 4 kümeyi optimal olarak önermektedir.
+
+Bu bilgiler ışığında, D indeksinin ve diğer yöntemlerin sonuçları dikkate alındığında, en uygun küme sayısının 3 olduğu görülmektedir. Ancak, Gap Statistic'in 4 küme için yüksek değerler göstermesi ve WSS ile Silhouette yöntemlerinin desteklemesiyle, 4 küme sayısı da dikkate alınabilir. Dolayısıyla, daha ayrıntılı ve dengeli bir kümelenme analizi sunmak için 4 küme sayısının uygun olduğu sonucuna varılmıştır. Çalışmanın kalanında, bu değer kullanılacaktır.
+
+### WARD.D2 YÖNTEMİ İLE HİYERARŞİK KÜMELEME MODELİ GELİŞTİRİLMESİ
+
+```{r}
+hc_m <- hclust(d=dist_man_pca, method="ward.D2")
+coph_m <- cophenetic(hc_m)
+cor(dist_man_pca,coph_m)
+```
+
+Ward.D2 yöntemi ile yapılan hiyerarşik kümelemenin kophenetik korelasyon katsayısı 0.67 olup, bu değerin, kümeleme yapısının orijinal mesafelerle orta derecede iyi bir uyum gösterdiğini işaret ettiği söylenebilir.
+
+```{r include=FALSE}
+grup_hc_m_k2 <- cutree(hc_m, k = 2)
+grup_hc_m_k3 <- cutree(hc_m, k = 3)
+grup_hc_m_k4 <- cutree(hc_m, k = 4)
+grup_hc_m_k5 <- cutree(hc_m, k = 5)
+```
+
+```{r fig.height=4, fig.width=8}
+plot_k2 <- fviz_cluster(list(data = data, cluster = grup_hc_m_k2),
+                        ellipse.type = "convex", # Concentration ellipse
+                        repel = TRUE, # Avoid label overplotting (slow)
+                        show.clust.cent = FALSE, 
+                        ggtheme = theme_minimal(),
+                        geom = "point") + ggtitle("k = 2")
+plot_k3 <- fviz_cluster(list(data = data, cluster = grup_hc_m_k3),
+                        ellipse.type = "convex", # Concentration ellipse
+                        repel = TRUE, # Avoid label overplotting (slow)
+                        show.clust.cent = FALSE, 
+                        ggtheme = theme_minimal(),
+                        geom = "point") + ggtitle("k = 3")
+plot_k4 <- fviz_cluster(list(data = data, cluster = grup_hc_m_k4),
+                        ellipse.type = "convex", # Concentration ellipse
+                        repel = TRUE, # Avoid label overplotting (slow)
+                        show.clust.cent = FALSE, 
+                        ggtheme = theme_minimal(),
+                        geom = "point") + ggtitle("k = 4")
+plot_k5 <- fviz_cluster(list(data = data, cluster = grup_hc_m_k5),
+                        ellipse.type = "convex", # Concentration ellipse
+                        repel = TRUE, # Avoid label overplotting (slow)
+                        show.clust.cent = FALSE, 
+                        ggtheme = theme_minimal(),
+                        geom = "point") + ggtitle("k = 5")
+grid.arrange(plot_k2,plot_k3,plot_k4,plot_k5, nrow = 2, ncol = 2)
+
+```
+
+Bu grafikler, Ward.D2 yöntemiyle yapılan hiyerarşik kümelemenin k=2, k=3, k=4 ve k=5 için sonuçlarını göstermektedir. k=2 ve k=3 kümeleri, verileri yeterince iyi ayrıştırsa da, daha fazla detay için k=4 ve k=5 kümeleri de incelenmiştir. k=4'te, kümeler arasındaki ayrışma ve içsel tutarlılık iyi gözükmektedir. k=5'te ise, bazı kümeler daha küçük alt gruplara ayrılmıştır ve özellikle bir küme tek bir veri noktasından oluşmaktadır, bu da kümelenmenin homojenliğini ve anlamlılığını azaltabilir. Genel olarak, k=4 küme sayısı, hem yeterli ayrışmayı hem de içsel tutarlılığı sağladığı için uygun bir seçenek olarak öne çıkmaktadır.
+
+```{r}
+fviz_dend(hc_m, k=4, 
+          rect = TRUE, rect_fill = TRUE, 
+          rect_border = "jco", 
+          labels_track_height = 0.8) + 
+  labs(title = "Dendrogram of Ward.D2 Hierarchical Clustering",
+       subtitle = "with k = 4")
+```
+
+Bu dendrogram, Ward.D2 yöntemi ile yapılan hiyerarşik kümelemenin k=4 için sonuçlarını göstermektedir. Dendrogramda, veri seti dört ana kümeye ayrılmıştır ve bu kümeler farklı renklerle belirtilmiştir. Her bir dal, gözlemlerin nasıl gruplandığını ve hangi aşamada birleştiğini gösterir. Yükseklik ekseni, kümeler arasındaki mesafeyi temsil eder; daha yüksek birleşme noktaları, kümeler arasındaki daha büyük farkları gösterir. Bu yapı, verilerin dört belirgin kümeye ayrıldığını ve her bir kümenin kendi içinde tutarlı olduğunu göstermektedir
+
+### AVERAGE YÖNTEMİ İLE HİYERARŞİK KÜMELEME MODELİ GELİŞTİRİLMESİ
+
+```{r}
+hc_ma <- hclust(d=dist_man_pca, method="average")
+coph_ma <- cophenetic(hc_ma)
+cor(dist_man_pca,coph_ma)
+```
+
+Average yöntemiyle yapılan hiyerarşik kümelemenin kophenetik korelasyon katsayısı 0.87 olup, bu değerin, kümeleme yapısının orijinal mesafelerle yüksek derecede iyi bir uyum gösterdiğini işaret ettiği söylenebilir.
+
+```{r fig.height=4, fig.width=8, include=FALSE}
+#hc_e, hc_ea, hc_m, hc_ma 
+grup_hc_ma_k2 <- cutree(hc_ma, k = 2)
+grup_hc_ma_k3 <- cutree(hc_ma, k = 3)
+grup_hc_ma_k4 <- cutree(hc_ma, k = 4)
+grup_hc_ma_k5 <- cutree(hc_ma, k = 5)
+```
+
+```{r fig.height=4, fig.width=8}
+plot_k2 <- fviz_cluster(list(data = data, cluster = grup_hc_ma_k2),
+                        ellipse.type = "convex", # Concentration ellipse
+                        repel = TRUE, # Avoid label overplotting (slow)
+                        show.clust.cent = FALSE, 
+                        ggtheme = theme_minimal(),
+                        geom = "point") + ggtitle("k = 2")
+plot_k3 <- fviz_cluster(list(data = data, cluster = grup_hc_ma_k3),
+                        ellipse.type = "convex", # Concentration ellipse
+                        repel = TRUE, # Avoid label overplotting (slow)
+                        show.clust.cent = FALSE, 
+                        ggtheme = theme_minimal(),
+                        geom = "point") + ggtitle("k = 3")
+plot_k4 <- fviz_cluster(list(data = data, cluster = grup_hc_ma_k4),
+                        ellipse.type = "convex", # Concentration ellipse
+                        repel = TRUE, # Avoid label overplotting (slow)
+                        show.clust.cent = FALSE, 
+                        ggtheme = theme_minimal(),
+                        geom = "point") + ggtitle("k = 4")
+plot_k5 <- fviz_cluster(list(data = data, cluster = grup_hc_ma_k5),
+                        ellipse.type = "convex", # Concentration ellipse
+                        repel = TRUE, # Avoid label overplotting (slow)
+                        show.clust.cent = FALSE, 
+                        ggtheme = theme_minimal(),
+                        geom = "point") + ggtitle("k = 5")
+grid.arrange(plot_k2, plot_k3, plot_k4, plot_k5, ncol = 2)
+```
+
+Bu grafikler, Average yöntemiyle yapılan hiyerarşik kümelemenin k=2, k=3, k=4 ve k=5 için sonuçlarını göstermektedir. Tüm kümeleme sonuçlarında, bir kümenin tek bir elemandan oluştuğu ve bu nedenle bu kümelerin anlamlı bir şekilde ayrışmadığı gözlemlenmektedir. k=2 ve k=3 için, büyük bir küme verileri içe alırken, diğer kümeler küçük ve izole kalmaktadır. k=4 ve k=5 için de benzer bir durum söz konusu olup, özellikle tek bir elemandan oluşan kümeler bulunmaktadır. Bu nedenle, mevcut kümeleme yapılandırmalarının hiçbiri verileri iyi bir şekilde ayrıştıramamaktadır ve daha uygun bir kümeleme yaklaşımı değerlendirilmelidir.
+
+## HİYERARŞİK K-MEANS KÜMELEME (HIERARCHICAL K-MEANS CLUSTERING)
+
+### HİYERARŞİK K-MEANS KÜMELEME KÜME (CLUSTER) SAYISININ BELİRLENMESİ
+
+```{r fig.height=6, fig.width=4}
+# Gap Statistics hesaplaması
+gap_stat_hkmeans <- clusGap(data.pca$x[,1:2], FUN = hkmeans, K.max = 10, B = 500)
+
+# WSS grafiği
+wss_plot_hkmeans <- fviz_nbclust(data.pca$x[,1:2], FUN = hkmeans, method = "wss") + ggtitle("WSS Method")
+
+# Silhouette grafiği
+sil_plot_hkmeans <- fviz_nbclust(data.pca$x[,1:2], FUN = hkmeans, method = "silhouette") + ggtitle("Silhouette Method")
+
+# Gap Statistics grafiği
+gap_plot_hkmeans <- fviz_gap_stat(gap_stat_hkmeans) + ggtitle("Gap Statistics")
+grid.arrange(wss_plot_hkmeans, sil_plot_hkmeans, gap_plot_hkmeans, ncol = 1)
+```
+
+WSS, Silhouette ve Gap Statistic yöntemlerine göre yapılan HKmeans kümeleme analizinde, optimal küme sayısının belirlenmesi için çeşitli bulgular elde edilmiştir. WSS metodunda, genel olarak belirgin bir dirsek noktası gözlemlenmemektedir, bu da optimal küme sayısının belirlenmesini zorlaştırır. Silhouette metodunda, 2 küme en yüksek ortalama silhouette genişliğine sahip olup, 3 ve 4 küme sayıları da benzer değerlere sahiptir, bu nedenle belirleyici değildir. Gap Statistic metodunda ise 4 ve üzeri küme sayıları yüksek değerlere sahiptir. Bu bilgiler ışığında, hem Silhouette hem de Gap Statistic yöntemlerinin sonuçları dikkate alınarak, optimal küme sayısının 4 olduğu sonucuna varılmaktadır, çünkü bu değer, verilerin daha iyi ayrışmasını ve küme içi tutarlılığı sağlamaktadır.
+
+### HİYERARŞİK K-MEANS KÜMELEME MODELİN GELİŞTİRİLMESİ
+
+```{r}
+set.seed(123)
+res.hk2 <- hkmeans(data.pca$x[,1:2], 2)
+res.hk3 <- hkmeans(data.pca$x[,1:2], 3)
+res.hk4 <- hkmeans(data.pca$x[,1:2], 4)
+res.hk5 <- hkmeans(data.pca$x[,1:2], 5)
+```
+
+```{r fig.height=4, fig.width=8}
+# Her kümeleme sonucu için fviz_cluster ile plot oluşturun
+plot2 <- fviz_cluster(res.hk2, geom = "point", palette = "jco", repel = TRUE, ggtheme = theme_classic()) + ggtitle("k = 2")
+plot3 <- fviz_cluster(res.hk3, geom = "point", palette = "jco", repel = TRUE, ggtheme = theme_classic()) + ggtitle("k = 3")
+plot4 <- fviz_cluster(res.hk4, geom = "point", palette = "jco", repel = TRUE, ggtheme = theme_classic()) + ggtitle("k = 4")
+plot5 <- fviz_cluster(res.hk5, geom = "point", palette = "jco", repel = TRUE, ggtheme = theme_classic()) + ggtitle("k = 5")
+
+# 2x2 formatında plotları birleştirin
+grid.arrange(plot2, plot3, plot4, plot5, ncol = 2)
+```
+
+**Between-Groups Sum of Squares / Total Sum of Squares** \| k=2 \| k=3 \| k=4 \| k=5 \| \|-------\|-------\|-------\|-------\| \| %53.1 \| %69.2 \| %81.1 \| %88.0 \|
+
+Bu grafikler, HKmeans algoritmasıyla yapılan kümeleme sonuçlarını k=2, k=3, k=4 ve k=5 için göstermektedir. Her kümeleme yapılandırmasının yanında verilen yüzde değerleri, her bir kümeleme için toplam varyansın ne kadarının açıklandığını göstermektedir. k=2 için %53.1, k=3 için %69.2, k=4 için %81.1 ve k=5 için %88.0 oranında varyans açıklanmaktadır. Bu değerlere bakıldığında, k=2 ve k=3 kümeleri, verilerin önemli bir kısmını açıklamakta yetersiz kalırken, k=4 ve k=5 kümeleri daha yüksek açıklama oranlarıyla daha anlamlı kümeler oluşturmakta ve verilerin yapısını daha iyi yansıtmaktadır. Ancak, k=5 kümesinde tek bir veriden oluşan bir küme gözlemlenmiştir, bu da kümeler arası anlamlı ayrışmanın zayıfladığını göstermektedir. Bu nedenle, verilerin hem yeterli ayrışmasını hem de içsel tutarlılığı sağlaması açısından k=4, optimal küme sayısı olarak değerlendirilmiştir.
+
+```{r}
+fviz_dend(res.hk4, cex = 0.6, palette = "jco",
+          rect = TRUE, rect_border = "jco", rect_fill = TRUE)
+```
+
+Bu dendrogram, verilerin hiyerarşik kümeleme yöntemi ile dört ana kümeye ayrıldığını göstermektedir. Yükseklik ekseni, kümeler arasındaki mesafeyi temsil eder ve daha yüksek birleşme noktaları, daha büyük farkları işaret eder. Farklı renklerle belirtilen kümeler, verilerin belirgin şekilde dört grupta toplandığını göstermektedir. Bu sonuç, verilerin dört küme halinde iyi bir ayrışma sağladığını ve her kümenin kendi içinde tutarlı olduğunu ortaya koymaktadır.
+
+## MODEL TEMELLİ KÜMELEME (MODEL BASED CLUSTERING)
+
+### MODEL TEMELLİ KÜMELEME UYGUN MODELİN BELİRLENMESİ
+
+```{r fig.height=4, fig.width=10}
+mc <- Mclust(data.pca$x[,1:2])
+# BIC values used for choosing the number of clusters
+fviz_mclust(mc, "BIC", palette = "jco")
+```
+
+Grafikte, farklı bileşen sayıları ve model yapılarına göre Bayesian Information Criterion (BIC) değerleri gösterilmektedir. BIC değerlerinin düşük olması, modelin veriyle daha iyi uyum sağladığını gösterir. En iyi model olarak seçilen EEI modeli, bileşen sayısı 8 olduğunda en düşük BIC değerine sahiptir, bu da optimal küme sayısının 8 olduğunu gösterir. Seçilen diğer modeller ise çeşitli bileşen sayıları ve model yapılarına göre BIC değerlerine dayanarak seçilmiştir. mc1 (VEV modeli, 4 bileşen) ve mc2 (VEV modeli, 5 bileşen), bileşen sayısı arttıkça BIC değerlerinin azaldığı modellerdir. mc3 (VEE modeli, 6 bileşen), mc4 (VVI modeli, 4 bileşen) ve mc5 (VVV modeli, 4 bileşen) ise farklı model yapılarına göre optimal bileşen sayılarını temsil etmektedir. Bu modellerin seçimi, grafikte gözlemlenen düşük BIC değerlerine dayanarak, verinin yapısına en iyi uyumu sağlayan modelleri incelemek için yapılmıştır.
+
+### MODEL TEMELLİ KÜMELEME MODELİN GELİŞTİRİLMESİ
+
+```{r}
+mc1 <- Mclust(data.pca$x[, 1:2], G = 4, modelNames = "VEV")
+mc2 <- Mclust(data.pca$x[, 1:2], G = 5, modelNames = "VEV")
+mc3 <- Mclust(data.pca$x[, 1:2], G = 6, modelNames = "VEE")
+mc4 <- Mclust(data.pca$x[, 1:2], G = 4, modelNames = "VVI")
+mc5 <- Mclust(data.pca$x[, 1:2], G = 4, modelNames = "VVV")
+```
+
+```{r fig.height=6, fig.width=15}
+# Her model için fviz_mclust grafikleri ve başlık ekleme
+plot1 <- fviz_mclust(mc1, "classification", geom = "point", ellipse.type = "convex", pointsize = 1.5, palette = "jco") + ggtitle("G = 4, VEV")
+plot2 <- fviz_mclust(mc2, "classification", geom = "point", ellipse.type = "convex", pointsize = 1.5, palette = "jco") + ggtitle("G = 5, VEV")
+plot3 <- fviz_mclust(mc3, "classification", geom = "point", ellipse.type = "convex", pointsize = 1.5, palette = "jco") + ggtitle("G = 6, VEE")
+plot4 <- fviz_mclust(mc4, "classification", geom = "point", ellipse.type = "convex", pointsize = 1.5, palette = "jco") + ggtitle("G = 4, VVI")
+plot5 <- fviz_mclust(mc5, "classification", geom = "point", ellipse.type = "convex", pointsize = 1.5, palette = "jco") + ggtitle("G = 4, VVV")
+
+plot_best <- fviz_mclust(mc, "classification", geom = "point", ellipse.type = "convex", pointsize = 1.5, palette = "jco") + ggtitle("Best Model")
+grid.arrange(plot1,plot4, plot5, plot2,plot3, plot_best, ncol = 3)
+
+```
+
+Bu grafikler, farklı model ve bileşen sayıları için HKmeans ve Mclust kümeleme sonuçlarını göstermektedir. G=4 için VEV modelinde kümeler birbirine girmiş durumda ve diğer modellerde de kümeler tam olarak ayrışmamış. Düşük BIC değerlerine rağmen iyi ayrışmış kümeler gözlemlenmediği için bu modellerden hiçbiri değerlendirilmeye alınmayacaktır. Daha iyi bir kümeleme yapısı elde edilemediğinden, farklı yöntem veya parametrelerle yeniden değerlendirme yapılması gerekmektedir.
+
+## YOĞUNLUK TABANLI KÜMELEME (DENSITY BASED CLUSTERING)
+
+### EPSILON VE MINIMUM POINTS DEĞERLERİNİN SEÇİLMESİ
+
+```{r}
+set.seed(123)
+dbscan::kNNdistplot(data.pca$x[,1:2], k = 4)
+```
+
+DBSCAN algoritmasında epsilon (eps) ve MinPts (minimum nokta sayısı) değerleri kritiktir. kNNdistplot grafiği kullanılarak epsilon değeri 1.3 olarak seçilmiştir çünkü bu noktada mesafeler arasında belirgin bir artış gözlemlenmiştir. MinPts değeri ise veri setinin yoğunluk yapısına uygun olarak ve genellikle yaygın bir seçim olan 4 olarak belirlenmiştir; bu değer, her kümede en az 4 nokta bulunmasını sağlayarak veri setinin yapısına uygun bir kümeleme sağlar.
+
+### YOĞUNLUK TABANLI KÜMELEME MODELİN GELİŞTİRİLMESİ
+
+```{r}
+db <- fpc::dbscan(data, eps = 1.3, MinPts = 4)
+fviz_cluster(db, data = data, stand = FALSE,
+             ellipse = FALSE, show.clust.cent = FALSE,
+             geom = "point",palette = "jco", ggtheme = theme_classic())
+print(db)
+```
+
+Bu kümeleme grafiği, verilerin yeterince ayrışmadığını ve kümelerin belirgin olmadığını göstermektedir. Kümeler arasındaki sınırlar net değil ve bazı noktalar izole kalmıştır, bu da kümeleme performansının düşük olduğunu işaret eder. Bu nedenle, bu sonuç değerlendirme dışı bırakılmıştır.
+
+# GEÇERLİ KÜMELEME MODELLERİNİN KIYASLANMASI
+
+## CLVALID İLE İÇSEL DOĞRULAMA (INTERNAL VALIDATION)
+
+```{r warning=FALSE}
+#Compare clustering algorithms 
+clmethods <- c("kmeans","pam","hierarchical")
+intern <- clValid(data.pca$x[,1:2], nClust = 3:10,
+                  clMethods = clmethods, validation = "internal",metric="manhattan")
+```
+
+```{r}
+summary(intern)
+```
+
+Bu değerlendirme sonuçlarına göre, kmeans k=3 için en düşük Connectivity (5.9230) ve en yüksek Silhouette skoru (0.5519) elde etmiştir, bu da iyi kümelenmeyi gösterir. Hierarchical yönteminde k=10 için en yüksek Dunn indeksi (0.1222) elde edilmiştir, bu da kümeler arası iyi bir ayrımı gösterir. Ancak, tüm yöntemlerde dengeli bir performans sergileyebilmesi için k=4'ün ideal bir seçim olduğu sonucuna varılmıştır. K=4, farklı algoritmalarla daha tutarlı ve anlamlı kümeler elde edilmesini sağlayacaktı
+
+```{r warning=FALSE}
+clmethods <- c("kmeans","pam","hierarchical")
+rownames(data.pca$x[,1:2]) <- 1:nrow(data.pca$x[,1:2])
+stab <- clValid(data, nClust = 3:10, clMethods = clmethods,metric="manhattan",
+                validation = "stability")
+```
+
+```{r}
+summary(stab)
+```
+
+Bu değerlendirme sonuçlarına göre, farklı kümeleme yöntemleri için çeşitli doğrulama ölçütleri analiz edilmiştir. Hierarchical yönteminde k=4 için en düşük APN (0.0020) elde edilmiştir, bu da yüksek bir tutarlılık göstermektedir. PAM yönteminde k=10 için en düşük AD (3.1585) değeri elde edilmiştir, bu da veri noktalarının iyi dağıldığını gösterir. Hierarchical yönteminde k=6 için en düşük ADM (0.0245) değeri ve k=10 için en düşük FOM (0.4433) değeri elde edilmiştir. Ancak, tüm yöntemlerde dengeli bir performans sergileyebilmesi için k=4'ün ideal bir seçim olduğu sonucuna varılmıştır. K=4, farklı algoritmalarla daha tutarlı ve anlamlı kümeler elde edilmesini sağlayacaktır.
+
+## GEÇERLİ KÜMELEME MODELLERİNİN FARKLI ELLIPSE.TYPES İLE GÖRSELLEŞTİRİLMESİ
+
+### K-MEANS MODELİN FARKLI ELLIPSE.TYPES İLE GÖRSELLEŞTİRİLMESİ
+
+```{r fig.height=6, fig.width=15, warning=FALSE}
+
+km_result <- km_data_pca_4
+
+# Create different types of plots using the new variable
+plot_norm <- fviz_cluster(km_result, data = data, geom = "point", ellipse.type = "norm", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, K-Means - norm")
+plot_convex <- fviz_cluster(km_result, data = data, geom = "point", ellipse.type = "convex", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, K-Means - convex")
+plot_t <- fviz_cluster(km_result, data = data, geom = "point", ellipse.type = "t", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, K-Means - t")
+plot_confidence <- fviz_cluster(km_result, data = data, geom = "point", ellipse.type = "confidence", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, K-Means - Confidence")
+plot_euclid <- fviz_cluster(km_result, data = data, geom = "point", ellipse.type = "euclid", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, K-Means - Euclid")
+# Grafikleri 2x3 gridde birleştirme
+grid.arrange(plot_norm, plot_convex, plot_t, plot_confidence, plot_euclid, ncol = 3)
+```
+
+Grafikler, k = 4 kullanılarak K-Means kümeleme yöntemiyle elde edilen sonuçları farklı elips türleriyle görselleştirmektedir. Dört kümenin olduğu bu görselleştirmelerde norm, convex, t, confidence ve euclid elips türleri kullanılmıştır. Elips türlerine göre yapılan görselleştirmelerde kümeler arası ayrışmanın genel olarak yeterli seviyede sağlanmadığı görülmektedir. Bazı elips türlerinde (özellikle norm ve convex) kümeler arasında belirgin örtüşmeler gözlemlenmektedir. Bu da, k = 4'ün veri seti için optimal küme sayısı olmadığını göstermektedir ve daha uygun bir model seçimi yapılması gerektiğini düşündürmektedir.
+
+### K-MEDOIDS MODELİN FARKLI ELLIPSE.TYPES İLE GÖRSELLEŞTİRİLMESİ
+
+```{r fig.height=6, fig.width=15, warning=FALSE}
+# fviz_mclust grafikleri farklı ellipse.type'lar ile
+pam_result <- pam_data_pca_4
+plot_norm <- fviz_mclust(pam_result, "classification", geom = "point", ellipse.type = "norm", pointsize = 1.5, palette = "jco") + ggtitle("K-Medoids, k = 4 - Norm")
+plot_convex <- fviz_mclust(pam_result, "classification", geom = "point", ellipse.type = "convex", pointsize = 1.5, palette = "jco") + ggtitle("K-Medoids, k = 4 - Convex")
+plot_t <- fviz_mclust(pam_result, "classification", geom = "point", ellipse.type = "t", pointsize = 1.5, palette = "jco") + ggtitle("K-Medoids, k = 4 - t")
+plot_confidence <- fviz_mclust(pam_result, "classification", geom = "point", ellipse.type = "confidence", pointsize = 1.5, palette = "jco") + ggtitle("K-Medoids, k = 4 - confidence")
+plot_euclid <- fviz_mclust(pam_result, "classification", geom = "point", ellipse.type = "euclid", pointsize = 1.5, palette = "jco") + ggtitle("K-Medoids, k = 4 - Euclid")
+# Grafikleri 2x3 gridde birleştirme
+grid.arrange(plot_norm, plot_convex, plot_t, plot_confidence, plot_euclid, ncol = 3)
+```
+
+K-Medoids yöntemiyle k = 4 olarak belirlenen kümeler, farklı elips türleri kullanılarak görselleştirilmiştir. Görsellerdeki kümeler genel olarak iyi bir şekilde ayrışmıştır. Her bir küme, belirgin bir şekilde diğerlerinden ayrı konumlanmış ve elipsler kümelerin etrafını sarmıştır. Özellikle norm, convex ve euclid elips türleri, kümelerin sınırlarını net bir şekilde göstermektedir. K-Medoids'in bu sonuçları, veri seti üzerinde makul bir kümeleme performansı sağladığını ve k = 4 seçiminin veri seti için uygun olduğunu desteklemektedir. Bu model, kümeler arasındaki ayrımı net bir şekilde gösterdiği ve stabil sonuçlar sunduğu için bu modelin nihai seçim olarak değerlendirilmesi gerektiği desteklenmektedir.
+
+### HİYERARŞİK KÜMELEME MODELİN FARKLI ELLIPSE.TYPES İLE GÖRSELLEŞTİRİLMESİ
+
+```{r fig.height=6, fig.width=15, warning=FALSE}
+
+hc_m <- hclust(d=dist_man_pca, method="ward.D2")
+grup_hc_m_k4 <- cutree(hc_m, k=4)
+
+hierarchical_result <- grup_hc_m_k4
+
+plot_norm <- fviz_cluster(list(data = data.pca$x[, 1:2], cluster = hierarchical_result), geom = "point", ellipse.type = "norm", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, Ward.D2 - Norm")
+plot_convex <- fviz_cluster(list(data = data.pca$x[, 1:2], cluster = hierarchical_result), geom = "point", ellipse.type = "convex", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, Ward.D2 - Convex")
+plot_t <- fviz_cluster(list(data = data.pca$x[, 1:2], cluster = hierarchical_result), geom = "point", ellipse.type = "t", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, Ward.D2 - t")
+plot_confidence <- fviz_cluster(list(data = data.pca$x[, 1:2], cluster = hierarchical_result), geom = "point", ellipse.type = "confidence", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, Ward.D2 - Confidence")
+plot_euclid <- fviz_cluster(list(data = data.pca$x[, 1:2], cluster = hierarchical_result), geom = "point", ellipse.type = "euclid", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, Ward.D2 - Euclid")
+
+
+grid.arrange(plot_norm, plot_convex, plot_t, plot_confidence, plot_euclid, ncol = 3)
+
+```
+
+K = 4 olarak belirlenen Ward.D2 yöntemiyle oluşturulan kümeler, farklı elips türleri kullanılarak görselleştirilmiştir. Görsellerdeki kümeler, genel olarak birbirinden yeterince ayrışmamış ve bazı kümeler birbirine karışmıştır. Norm, convex ve euclid elips türleri, kümelerin sınırlarını belirgin bir şekilde göstermekte zorlanmakta, bu da küme içi ve kümeler arası ayrışmanın zayıf olduğunu ortaya koymaktadır. Özellikle confidence elips türü, kümelerin güven aralıklarını detaylı bir şekilde gösterse de, kümeler arasındaki belirsizliği azaltamamaktadır. Bu sonuçlar, Ward.D2 yöntemiyle k = 4 kullanılarak yapılan kümelemelerin yeterince net olmadığı ve bu modelin nihai seçim olarak uygun olmadığını göstermektedir.
+
+### HİYERARŞİK K-MEANS MODELİN FARKLI ELLIPSE.TYPES İLE GÖRSELLEŞTİRİLMESİ
+
+```{r fig.height=6, fig.width=15, warning=FALSE}
+# res.hk4'ü başka bir değişkene atama
+hierarchical_kmeans_result <- res.hk4
+
+# fviz_cluster ile farklı ellipse.type'lar ile grafikler oluşturma
+plot_norm <- fviz_cluster(hierarchical_kmeans_result, geom = "point", ellipse.type = "norm", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, HKmeans - Norm")
+plot_convex <- fviz_cluster(hierarchical_kmeans_result, geom = "point", ellipse.type = "convex", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, HKmeans - Convex")
+plot_t <- fviz_cluster(hierarchical_kmeans_result, geom = "point", ellipse.type = "t", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, HKmeans - t")
+plot_confidence <- fviz_cluster(hierarchical_kmeans_result, geom = "point", ellipse.type = "confidence", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, HKmeans - Confidence")
+plot_euclid <- fviz_cluster(hierarchical_kmeans_result, geom = "point", ellipse.type = "euclid", pointsize = 1.5, palette = "jco") + ggtitle("k = 4, HKmeans - Euclid")
+
+# Grafikleri 2x3 gridde birleştirme
+grid.arrange(plot_norm, plot_convex, plot_t, plot_confidence, plot_euclid, ncol = 3)
+```
+
+HKmeans yöntemi kullanılarak k = 4 ile yapılan kümeleme, farklı elips türleri kullanılarak görselleştirilmiştir. Ancak bu görselleştirmeler, kümelerin yeterince net bir şekilde ayrışmadığını göstermektedir. Norm, convex ve euclid elips türleri, kümelerin sınırlarını belirginleştirmekte zorlanmakta ve bazı kümelerin birbirine karıştığı görülmektedir. Confidence elips türü, kümelerin güven aralıklarını belirginleştirse de, kümeler arasındaki belirsizliği azaltamamaktadır. Bu durum, k = 4 ile yapılan HKmeans kümelemesinin yeterince iyi ayrışmadığını ve bu modelin nihai seçim olarak uygun olmadığını göstermektedir.
+
+## NİHAİ MODELİN SEÇİLMESİ
+
+```{r fig.height=6, fig.width=15}
+# Hierarchical clustering sonuçlarını kullanarak kümeleri belirleme
+hc_m <- hclust(d = dist_man_pca, method = "ward.D2")
+grup_hc_m_k4 <- cutree(hc_m, k = 4)
+
+# Silhouette skorlarını hesaplayın
+sil_km <- silhouette(km_result$cluster, dist_man_pca)
+sil_pam <- pam_result$silinfo$widths
+sil_hkmeans <- silhouette(hierarchical_kmeans_result$cluster, dist_man_pca)
+sil_hc <- silhouette(grup_hc_m_k4, dist_man_pca)
+
+# Ortalama silhouette genişliklerini hesaplayın
+avg_sil_km <- mean(sil_km[, "sil_width"])
+avg_sil_pam <- mean(sil_pam[, "sil_width"])
+avg_sil_hkmeans <- mean(sil_hkmeans[, "sil_width"])
+avg_sil_hc <- mean(sil_hc[, "sil_width"])
+
+# Silhouette skorlarını görselleştirin ve ortalama silhouette genişliklerini ekleyin
+p1 <- fviz_silhouette(sil_km, palette = "jco", ggtheme = theme_classic()) + 
+  ggtitle("KMeans Silhouette") +
+  annotate("text", x = Inf, y = Inf, label = paste("Avg width:", round(avg_sil_km, 2)), hjust = 1.1, vjust = 2, size = 4, color = "black")
+
+p2 <- fviz_silhouette(pam_result, palette = "jco", ggtheme = theme_classic()) + 
+  ggtitle("PAM Silhouette") +
+  annotate("text", x = Inf, y = Inf, label = paste("Avg width:", round(avg_sil_pam, 2)), hjust = 1.1, vjust = 2, size = 4, color = "black")
+
+p3 <- fviz_silhouette(sil_hkmeans, palette = "jco", ggtheme = theme_classic()) + 
+  ggtitle("Hierarchical KMeans Silhouette") +
+  annotate("text", x = Inf, y = Inf, label = paste("Avg width:", round(avg_sil_hkmeans, 2)), hjust = 1.1, vjust = 2, size = 4, color = "black")
+
+p4 <- fviz_silhouette(sil_hc, palette = "jco", ggtheme = theme_classic()) + 
+  ggtitle("Hierarchical Silhouette") +
+  annotate("text", x = Inf, y = Inf, label = paste("Avg width:", round(avg_sil_hc, 2)), hjust = 1.1, vjust = 2, size = 4, color = "black")
+
+# Plotları bir araya getirin
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+
+```
+
+K-medoids kümeleme yöntemi, birkaç önemli nedenden dolayı nihai model olarak seçilmiştir. İlk olarak, k-medoids diğer kümeleme yöntemlerine göre aykırı değerlere daha dirençlidir ve bu da daha sağlam küme atamaları sağlar. Ayrıca, görselleştirmelerde görüldüğü gibi, k-medoids kümeleri diğer yöntemlere kıyasla daha iyi ayrışmış ve daha az örtüşme göstermektedir. Yüksek ortalama silhouette genişliği elde edilmiştir, bu da daha iyi tanımlanmış kümeler ve yüksek iç küme benzerliği ile düşük kümeler arası benzerlik anlamına gelir. K-means ve hierarchical k-means ile benzer silhouette genişliklerine sahip olmasına rağmen, k-medoids'in aykırı değerlere karşı daha dirençli olması ve daha tutarlı kümeler oluşturması, onu en uygun seçim yapmaktadır.
+
+# SONUÇ
+
+K-medoids kümeleme yöntemi, model seçimi için nihai tercih olarak belirlenmiştir. Bu seçim, k-medoids'in aykırı değerlere daha dirençli olması, kümelerin daha iyi ayrışması ve yüksek ortalama silhouette genişliği sunması nedeniyle yapılmıştır. Diğer yöntemler de benzer ortalama silhouette genişlikleri sağlasa da, k-medoids'in daha sağlam ve tutarlı kümeler oluşturması, onu en uygun seçim haline getirmiştir.
+
+## NİHAİ MODELİN KÜMELERİNİN TANIMLANMASI
+
+```{r}
+summary(raw_data)
+aggregate(raw_data, by=list(cluster= pam_result$cluster), mean)
+```
+
+Küme 1, düşük ortalama I0 ve PA500 değerleri ile dikkat çekiyor. HFS ve DA değerleri orta seviyede olan bu kümeye ait örnekler, alan (Area) ve maksimum IP (Max.IP) açısından küçük ve ortalama değerlere sahip. Ayrıca, ortalama DR ve P değerleri düşük olduğundan, bu kümeyi düşük enerji ve etkinlik seviyesine sahip örnekler olarak tanımlayabiliriz.
+
+Küme 2, düşük ortalama I0 ve PA500 değerlerine sahip olmakla birlikte, HFS ve DA değerleri de oldukça düşük seviyelerde. Bu kümedeki örnekler, alan (Area) ve maksimum IP (Max.IP) değerleri açısından oldukça küçük değerlere sahipler. Ortalama DR ve P değerleri de düşük seviyede olduğundan, bu kümeyi düşük enerji ve düşük etkinlik seviyesine sahip, küçük boyutlu ve düşük performanslı örnekleri temsil eden bir küme olarak düşünebiliriz.
+
+Küme 3 ise, yüksek ortalama I0 değeri ile öne çıkıyor. PA500 ve HFS değerleri düşük olmasına rağmen, DA değeri oldukça yüksek. Bu kümedeki örnekler, alan (Area) ve maksimum IP (Max.IP) değerleri açısından çok yüksek değerlere sahipler. Ortalama DR ve P değerleri de yüksek seviyede olduğundan, bu kümeyi yüksek enerji ve yüksek etkinlik seviyesine sahip, büyük boyutlu ve yüksek performanslı örnekleri temsil eden bir küme olarak tanımlayabiliriz.
+
+Son olarak, Küme 4 en yüksek ortalama I0 ve PA500 değerlerine sahip. HFS ve DA değerleri çok yüksek olan bu kümedeki örnekler, alan (Area) ve maksimum IP (Max.IP) değerleri açısından en yüksek değerlere sahipler. Ortalama DR ve P değerleri de çok yüksek seviyede olduğundan, bu kümeyi en yüksek enerji ve etkinlik seviyesine sahip, en büyük boyutlu ve en yüksek performanslı örnekleri temsil eden bir küme olarak değerlendirebiliriz.
+
+## ACCURACY DEĞERİNİN ELDE EDİLMESİ
+
+```{r}
+dataWithLabel$Class[dataWithLabel$Class %in% c("fad", "mas", "gla")] <- "mix"
+```
+
+Bu çalışma kapsamında, meme dokusunun altı türünü sınıflandıran veri seti, veri seti açıklamasında belirtildiği üzere, fibro-adenom, mastopati ve glandüler sınıflarının "mix" sınıfı altında birleştirilerek dört sınıfa indirgenmiştir. Bu sınıfların ayrımının zor olması ve analiz amaçlarına uygun olmaması nedeniyle bu birleşim tercih edilmiştir. Böylece, sınıflar karsinom (car), birleştirilmiş sınıf (mix), bağ doku (con) ve yağ dokusu (adi) olarak yeniden tanımlanmış ve analiz bu dört sınıf üzerinden gerçekleştirilmiştir.
+
+```{r include=FALSE}
+# Gerçek sınıf etiketlerini alın
+true_labels <- dataWithLabel$Class
+
+# Kmedoids sonuçlarını alın (pam_result$clustering kümeleme sonuçlarını içerir)
+predicted_labels <- pam_result$clustering
+
+# Seviyeleri faktöre dönüştürün
+true_labels <- as.factor(true_labels)
+predicted_labels <- as.factor(predicted_labels)
+
+# Karışıklık matrisi oluşturun
+conf_matrix <- table(True = true_labels, Cluster = predicted_labels)
+
+# Gerçek etiketlerin yeniden sıralaması
+new_true_labels <- factor(true_labels, levels = c("car", "mix", "con", "adi"))
+new_predicted_labels <- factor(predicted_labels, levels = c("1", "2", "3", "4"))
+levels(new_predicted_labels) <- c("car", "mix", "con", "adi")
+
+# Karışıklık matrisini yeniden düzenleyin
+conf_matrix <- table(True = new_true_labels, Cluster = new_predicted_labels)
+
+# Karışıklık Matrisini DataFrame'e dönüştürün
+conf_matrix_df <- as.data.frame(as.table(conf_matrix))
+```
+
+```{r}
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Accuracy:", accuracy))
+# Karışıklık matrisi ile doğruluk değerini hesaplayın
+confusion_matrix <- confusionMatrix(conf_matrix)
+print(confusion_matrix$byClass)
+# Accuracy hesapla
+
+
+# ggplot kullanarak karışıklık matrisi grafiği oluşturun (transpoze)
+ggplot(data = conf_matrix_df, aes(x = True, y = Cluster, fill = Freq)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  geom_text(aes(label = Freq), vjust = 1) +
+  theme_minimal() +
+  labs(title = "Confusion Matrix",
+       x = "True Labels",
+       y = "Predicted Labels")
+
+
+```
+
+Modelin genel doğruluğu %70.75 olup, bu oran modelin genel olarak doğru tahmin yapma yeteneğinin oldukça iyi olduğunu göstermektedir. Modelin performansı farklı sınıflar için değişiklik göstermektedir. Örneğin, car sınıfında duyarlılık %62.5 ve pozitif prediktif değer %95.24 olarak ölçülmüştür, bu da car sınıfındaki örneklerin %62.5'inin doğru tahmin edildiğini ve car olarak tahmin edilenlerin %95.24'ünün gerçekte car olduğunu göstermektedir. Özgüllük ise %98.65 olup, modelin car olmayan örnekleri doğru bir şekilde ayırt edebildiğini göstermektedir. mix sınıfında ise modelin duyarlılığı %88.1, özgüllüğü %81.25 ve pozitif prediktif değeri %75.51'dir. Bu da mix sınıfındaki örneklerin büyük çoğunluğunun doğru bir şekilde tahmin edildiğini ve mix olarak tahmin edilenlerin %75.51'inin gerçekten mix olduğunu göstermektedir. con sınıfında modelin duyarlılığı %41.67 olup, bu sınıftaki örneklerin doğru tahmin edilme oranı daha düşüktür. Ancak, pozitif prediktif değer %71.43 ve özgüllük %95.12'dir, bu da modelin con sınıfı olmayan örnekleri doğru bir şekilde ayırt edebildiğini göstermektedir. Son olarak, adi sınıfında modelin duyarlılığı %100 olup, bu sınıftaki tüm örnekler doğru bir şekilde tahmin edilmiştir. Ancak, pozitif prediktif değer %36.36 ve özgüllük %85.71 olarak ölçülmüştür. Bu, adi sınıfının tamamının doğru tahmin edilmesine karşın, bu sınıfta yanlış pozitif oranının yüksek olduğunu göstermektedir. Genel olarak, model mix ve adi sınıflarında yüksek performans gösterirken, car sınıfında orta düzeyde performans sergilemekte ve con sınıfında ise performansın daha düşük olduğu görülmektedir. Modelin genel doğruluğu iyi olsa da, özellikle con sınıfındaki düşük duyarlılık dikkate alınarak modelin iyileştirilmesi gerekmektedir.

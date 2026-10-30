@@ -1,0 +1,591 @@
+---
+title: "DSM 5001 Veri Biliminde Olasılık ve İstatistik Final Ödevi"
+author: |
+  Tarık Tuna Taşaltı  
+date: "`2025/01/28`"
+documentclass: ctexart
+output: 
+  rticles::ctex:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+lang: "tr"
+header-includes:
+keywords: 
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+# 1. Soru
+
+150 adet gözlem, set.seed kullanılarak rastgele seçilmiştir. Sonrasında yine rastgele 3 değişken, set.seed işlemi kullanılarak seçilmiştir.
+```{r}
+data <- read.csv("bodyfat.csv")
+nrow(data)
+
+set.seed()
+indeks <-  sort(sample(1:nrow(data), size=150, replace = F))
+data <- data[indeks,]
+
+library(moments)
+set.seed()
+indeks <-  sort(sample(1:ncol(data), size=3, replace = F))
+```
+Bu seçilen rastgele satırlar ve kolonların, ortalama, medyan, mod, varyans, standart sapma, aralık, çeyrekler açıklığı, 1. çeyrek, 3. çeyrek, minimum, maksimum, çarpıklık katsayısı ve basıklık katsayısı hesaplanmıştır.
+
+```{r}
+apply(data[,indeks], 2, function(column) {
+  c(
+    Mean = mean(column),
+    Median = median(column),
+    Mode = as.numeric(names(sort(table(column), decreasing = TRUE)[1])), # Mod
+    Variance = var(column),
+    Std_Dev = sd(column),
+    Range = diff(range(column)),
+    IQR = IQR(column),
+    Q1 = quantile(column, 0.25), 
+    Q3 = quantile(column, 0.75),
+    Min = min(column),
+    Max = max(column),
+    Skewness = skewness(column),
+    Kurtosis = kurtosis(column)
+  )
+})
+```
+Rastgele seçilen değişkenler; Chest, Abdomen ve Ankle olmuştur.
+
+## 1. Chest
+- **Genel Dağılım:**
+  - Ortalama (Mean) ve Medyan değerlerinin yakınlığı, dağılımın büyük ölçüde simetrik olduğunu gösterir.
+  - Pozitif çarpıklık (Skewness = 0.8956), dağılımın sağ tarafa doğru eğilimli olduğunu işaret eder.
+- **Yayılma:**
+  - Varyans (Variance = 76.18) ve Standart Sapma (Std_Dev = 8.73), ölçümlerin orta derecede değişken olduğunu gösterir.
+- **Uç Değerler:**
+  - Çeyrekler Arası Genişlik (IQR = 11.3) ile Aralık (Range = 51.1) arasındaki büyük fark, veri setinde uç değerlerin bulunabileceğine işaret eder.
+- **Basıklık:**
+  - Yüksek basıklık (Kurtosis = 4.25), dağılımın sivri olduğunu, yani çoğu değerin ortalamaya yakın toplandığını gösterir.
+
+## 2. Abdomen
+- **Genel Dağılım:**
+  - Ortalama (Mean = 93.26) medyandan (Median = 90.9) ve moddan (Mode = 90.3) büyük olduğu için sağa çarpık bir dağılım görülür.
+  - Pozitif çarpıklık (Skewness = 1.0557) bu durumu destekler.
+- **Yayılma:**
+  - Varyans (Variance = 124.12) ve Standart Sapma (Std_Dev = 11.14), Abdomen ölçümlerinin diğer değişkenlere göre daha geniş bir yayılmaya sahip olduğunu gösterir.
+- **Uç Değerler:**
+  - IQR (14.45) ile toplam aralık (Range = 75.3) farkı oldukça büyüktür, bu da uç değerlerin etkili olabileceğini düşündürür.
+- **Basıklık:**
+  - Yüksek basıklık (Kurtosis = 5.92), değerlerin çoğunun ortalamaya yakın toplandığını ve uç değerlerin varlığını destekler.
+
+## 3. Ankle
+- **Genel Dağılım:**
+  - Ortalama (Mean = 22.98), Medyan (Median = 22.6) ve Mod (Mode = 22.5) değerlerinin birbirine yakın olması, dağılımın büyük ölçüde simetrik olduğunu gösterir.
+  - Pozitif çarpıklık (Skewness = 0.9947), dağılımın sağ tarafa doğru hafif eğimli olduğunu ifade eder.
+- **Yayılma:**
+  - Varyans (Variance = 2.07) ve Standart Sapma (Std_Dev = 1.44), diğer değişkenlere kıyasla ölçümlerin daha dar bir yayılmaya sahip olduğunu gösterir.
+- **Uç Değerler:**
+  - IQR (1.8) ile toplam aralık (Range = 9.9) farkının küçük olması, uç değerlerin etkisinin sınırlı olduğunu gösterir.
+- **Basıklık:**
+  - Yüksek basıklık (Kurtosis = 5.30), verilerin yoğun bir şekilde ortalamaya yakın toplandığını gösterir.
+
+# 2. Soru
+
+## Değişkenlerin Seçilmesi
+Normal dağılıma en yakın değişkenin, sağdan çarpık değişkenin, soldan çarpık değişkenin belirlenmesi adına bütün değişkenlerden çarpıklık ve basıklık katsayılarına bakılmıştır.
+
+```{r}
+apply(data, 2, function(column) {
+  c(
+    Skewness = skewness(column),
+    Kurtosis = kurtosis(column)
+  )
+})[, order(apply(data, 2, function(column) skewness(column)))]
+```
+Bu değişkenlerden negatif çarpıklık katsayısına sahip olan Forearm ve BodyFat değişkenleri bulunmaktadır. Ancak BodyFat'in çarpıklık katsayısı 0 değerine çok yakın olduğu için soldan çarpık değişken olarak Forearm seçilmiştir.
+
+Yüksek pozitif çarpıklık değerine sahip değişkenler azdan çoka doğru sırasyıla Ankle, Thigh, Abdomen, Weight değişkenleridir. Bunlardan hangisinin seçileceğine yine, set.seed kullanılarak rastgele karar verilmiştir.
+
+Normal dağılıma en uygun değişken olarak da Height değişkeni, 0'a yakın çarpıklık ve 3'e yakın basıklık değeri olması sebebiyle tercih edilmiştir.
+
+```{r}
+set.seed()
+sonuncu_degisken<- sample(c("Thigh","Abdomen","Weight","Hip"), size=1)
+sonuncu_degisken
+```
+Sağdan çarpık değişken olarak Hip seçilmiştir.
+
+## Normallik Testi
+```{r}
+data<-data[c("Forearm","Height",sonuncu_degisken)]
+
+
+library(nortest)
+
+sapply(data, function(column) {
+  c(
+    ShapiroWilk_P_Value = shapiro.test(column)$p.value,                      # Shapiro-Wilk
+    CramerVonMises_P_Value = cvm.test(column)$p.value,                      # Cramér-von Mises
+    AndersonDarling_P_Value = ad.test(column)$p.value,                      # Anderson-Darling
+    KolmogorovSmirnov_P_Value = ks.test(column, "pnorm",                    # Kolmogorov-Smirnov
+                                        mean(column), sd(column))$p.value
+  )
+})
+```
+
+### **1. Hipotezler**
+- **Null Hipotezi (H₀):** Veriler normal dağılıma uygundur.
+- **Alternatif Hipotez (H₁):** Veriler normal dağılıma uygun değildir.
+
+### **2. Testlerin Sonuçlarına Göre Değerlendirme**
+Her sütun için dört farklı normallik testi uygulanmıştır: **Shapiro-Wilk**, **Cramér-von Mises**, **Anderson-Darling**, ve **Kolmogorov-Smirnov**. Testlerin p-değerleri incelenerek şu şekilde karar verilir:
+
+- Eğer **p-değeri ≤ 0.05**: Null hipotez reddedilir, veri normal dağılıma uygun değildir.
+- Eğer **p-değeri > 0.05**: Null hipotez reddedilemez, veri normal dağılıma uygundur.
+
+### **3. Kolmogorov-Smirnov Uyarısı**
+- **Uyarının Nedeni:** Kolmogorov-Smirnov testi, sürekli bir dağılım varsayar. Ancak veri setinde tekrarlayan değerler (ties) bulunduğu için bu varsayım ihlal edilmiştir. Bu durum, testin sonuçlarını etkileyebilir.
+- **Çözüm ve Değerlendirme:** Diğer normallik testlerine (Shapiro-Wilk, Anderson-Darling, Cramér-von Mises) odaklanmak daha uygun olabilir, çünkü bu testler eşit değerlere daha toleranslıdır.
+
+### **4. Sonuç ve Kararlar**
+
+#### **1. Forearm**
+- **Shapiro-Wilk Testi:** P-değeri 0.05'ten küçük, bu nedenle H₀ reddedilir. Forearm ölçümleri normal dağılıma uygun değildir.
+- **Cramér-von Mises ve Anderson-Darling Testleri:** P-değerleri Shapiro-Wilk testini destekler şekilde H₀’ı reddetmektedir. Bu durum, Forearm değişkeninin normal dağılım göstermediğini güçlendirir.
+- **Kolmogorov-Smirnov Testi:** P-değeri 0.05'ten büyük çıkmasına rağmen, tekrarlayan değerlerden kaynaklı güvenilirlik sorunları nedeniyle bu sonuç dikkatle ele alınmalıdır.
+
+#### **2. Height**
+- **Shapiro-Wilk Testi:** P-değeri 0.05'ten büyük olduğu için H₀ reddedilemez. Height değişkeni normal dağılıma uygundur.
+- **Cramér-von Mises ve Anderson-Darling Testleri:** P-değerleri, Height değişkeninin normal dağılıma uygun olduğu sonucunu destekler.
+- **Kolmogorov-Smirnov Testi:** P-değeri 0.05'ten büyük çıkmıştır ve Height değişkeni için bu test sonuçları güvenilir kabul edilebilir.
+
+#### **3. Hip**
+- **Shapiro-Wilk Testi:** P-değeri 0.05'ten küçük, bu nedenle H₀ reddedilir. Hip değişkeni normal dağılıma uygun değildir.
+- **Cramér-von Mises ve Anderson-Darling Testleri:** Bu testler de p-değerleriyle H₀'ı reddetmekte ve Hip değişkeninin normal dağılıma uygun olmadığını göstermektedir.
+- **Kolmogorov-Smirnov Testi:** P-değeri 0.05'in üzerinde olsa da, tekrarlayan değerler (ties) nedeniyle sonuçların güvenilirliği sınırlıdır.
+
+# 3. Soru
+
+## Merkezi Limit Teoremi ve Normallik Testleri Fonksiyonu
+
+```{r}
+# Gerekli kütüphaneler
+library(ggplot2)
+library(nortest)
+library(tidyr)
+library(dplyr)
+
+# Merkezi Limit Teoremi ve Normallik Testleri Fonksiyonu
+clt_demo_with_tests <- function(data, sample_sizes = c(5, 10, 30, 50), num_samples = 1000) {
+  plots <- list()
+  norm_tests <- list()
+  
+  # Her sütun için
+  for (col_name in colnames(data)) {
+    column_data <- data[[col_name]]
+    results <- list()
+    tests <- list()
+    
+    for (size in sample_sizes) {
+      # Örneklem ortalamaları
+      sample_means <- replicate(num_samples, mean(sample(column_data, size, replace = TRUE)))
+      
+      # Normallik testleri
+      shapiro_p <- shapiro.test(sample_means)$p.value
+      ad_p <- ad.test(sample_means)$p.value
+      cvm_p <- cvm.test(sample_means)$p.value
+      
+      # Test sonuçlarını kaydet
+      tests[[as.character(size)]] <- data.frame(
+        SampleSize = size,
+        Shapiro_Wilk = shapiro_p,
+        Anderson_Darling = ad_p,
+        Cramer_Von_Mises = cvm_p
+      )
+      
+      # Örneklem büyüklüğüne göre görselleştirme için veri kaydı
+      results[[as.character(size)]] <- data.frame(
+        SampleSize = factor(size, levels = c(5, 10, 30, 50),
+                            labels = c("Sample Size = 5", "Sample Size = 10", 
+                                       "Sample Size = 30", "Sample Size = 50")),
+        SampleMeans = sample_means
+      )
+    }
+    
+    # Tüm test sonuçlarını birleştirme
+    norm_tests[[col_name]] <- do.call(rbind, tests)
+    
+    # Tüm örneklem büyüklüklerini görselleştirme için birleştirme
+    results_df <- do.call(rbind, results)
+    sturges_bins <- ceiling(log2(length(data[[1]])) + 1)
+    
+    # ggplot oluşturma
+    p <- ggplot(results_df, aes(x = SampleMeans)) +
+      geom_histogram(bins = sturges_bins, color = "black", fill = "skyblue") +
+      facet_wrap(~ SampleSize, ncol = 2, scales = "free") + # Dinamik eksenler için scales = "free"
+      labs(
+        title = paste("Merkezi Limit Teoremi:", col_name),
+        x = "Örneklem Ortalamaları",
+        y = "Frekans"
+      ) +
+      theme_minimal()
+    
+    # Her bir plotu sakla
+    plots[[col_name]] <- p
+  }
+  
+  # Görseller ve normallik testlerini döndür
+  return(list(Plots = plots, NormTests = norm_tests))
+}
+```
+
+Bu fonksiyon, **Merkezi Limit Teoremi (CLT)** ile ilgili deneysel bir analiz yapmak ve örneklem ortalamalarının normalliğini test etmek için kullanılır. İşlevi şu şekilde özetlenebilir:
+
+1. **Örneklem Ortalamalarının Hesaplanması:** 
+   - Verilen veri setindeki her bir sütun için, belirli örneklem büyüklüklerinde (`sample_sizes`) rastgele örnekler alınır.
+   - Alınan her örneğin ortalaması hesaplanır ve `num_samples` kez tekrarlanır.
+
+2. **Normallik Testlerinin Uygulanması:** 
+   - Elde edilen örneklem ortalamalarına aşağıdaki normallik testleri uygulanır:
+     - **Shapiro-Wilk Testi**
+     - **Anderson-Darling Testi**
+     - **Cramér-von Mises Testi**
+   - Test sonuçları (p-değerleri), örneklem büyüklüklerine göre kaydedilir.
+
+3. **Görselleştirme:**
+   - Farklı örneklem büyüklükleri için elde edilen örneklem ortalamaları histogramlarla görselleştirilir.
+   - Histogramlar, `ggplot2` kullanılarak hazırlanır ve her örneklem büyüklüğü için ayrı ayrı gösterilir.
+
+4. **Sonuçların Döndürülmesi:**
+   - Fonksiyon, iki ana çıktıyı sağlar:
+     - **Plots:** Örneklem ortalamalarının histogramlarını içeren görseller.
+     - **NormTests:** Her sütun ve örneklem büyüklüğü için
+
+
+## Grafiklerin Yorumlanması
+Aşağıdaki kod bloğu ile fonksiyon çağrılarak her bir örneklem boyutu için grafikler elde edilir.
+```{r}
+# Fonksiyonu çalıştır
+clt_results <- clt_demo_with_tests(data)
+
+# Her bir sütunun görselleştirilmesi
+for (col_name in names(clt_results$Plots)) {
+  print(clt_results$Plots[[col_name]]) # Sütunun grafiği
+}
+```
+
+### **1. Forearm Değişkeni**
+- Küçük örneklem büyüklüklerinde (n = 5, n = 10), dağılım daha geniş ve hafifçe çarpık görünmektedir.
+- Örneklem büyüklüğü arttıkça (n = 30, n = 50), dağılım giderek daha simetrik ve normal dağılıma yakın bir şekil almaktadır.
+- **Sonuç:** Forearm değişkeninin örneklem ortalamaları, örneklem büyüklüğü arttıkça normal dağılıma yaklaşmaktadır. Bu durum, Merkezi Limit Teoremi'ni desteklemektedir.
+
+---
+
+### **2. Height Değişkeni**
+- Küçük örneklem büyüklüklerinde dağılım görece normal görünüyor ancak geniş bir yayılıma sahip.
+- n = 30 ve n = 50 olduğunda dağılımın simetrik hale geldiği ve ortalamaya daha sıkı bir şekilde toplandığı görülmektedir.
+- **Sonuç:** Height değişkeni zaten başlangıçta normal dağılıma yakın olduğu için, örneklem büyüklüğü arttıkça dağılım iyice normal şekle bürünmektedir. CLT burada da doğrulanmaktadır.
+
+---
+
+### **3. Hip Değişkeni**
+- Küçük örneklem büyüklüklerinde (n = 5, n = 10) dağılım sağa çarpık görünmektedir.
+- n = 30 ve özellikle n = 50 olduğunda, dağılım daha simetrik hale gelmekte ve normal dağılıma yaklaşmaktadır.
+- Ancak diğer değişkenlere göre uç değerler (outliers) Hip değişkeninde daha fazla gözlenebilir.
+- **Sonuç:** Hip değişkeni de örneklem büyüklüğü arttıkça normalleşme eğilimi göstermektedir, ancak başlangıçtaki çarpıklık nedeniyle daha büyük örneklemler gerektirebilir.
+
+## Normallik Testlerinin Yorumlanması
+
+Aşağıdaki kod bloğu ile fonksiyon çağrılarak her bir örneklem boyutu için normallik testi sonuçları elde edilir.
+```{r}
+# Normallik testlerinin sonuçları
+for (col_name in names(clt_results$NormTests)) {
+  cat("\nNormallik Test Sonuçları -", col_name, "\n")
+  print(clt_results$NormTests[[col_name]])
+}
+```
+### **1. Forearm Değişkeni**
+- **Örneklem büyüklüğü 5 olduğunda**, tüm normallik testlerinde p-değerleri 0.05’in altında olduğu için normal dağılım varsayımı reddedilmiştir. Küçük örneklemle elde edilen ortalamalar normal değildir.
+- **Örneklem büyüklüğü 10 olduğunda**, p-değerleri 0.05’in üzerine çıkmaktadır ve normal dağılım reddedilememektedir. Bu, örneklem büyüklüğünün artmasıyla normalleşme eğiliminin başladığını gösterir.
+- **Örneklem büyüklüğü 30 ve 50 olduğunda**, tüm testlerde p-değerleri oldukça yüksek olup, normal dağılıma uygunluk görülmektedir. Bu, CLT’nin açık bir şekilde etkisini gösterdiğini doğrulamaktadır.
+- **Sonuç:** Forearm değişkeni için CLT 10 örneklem büyüklüğünden itibaren kendini göstermeye başlamakta ve 30’dan sonra normal dağılıma tam olarak ulaşmaktadır.
+
+---
+
+### **2. Height Değişkeni**
+- **Tüm örneklem büyüklüklerinde**, p-değerleri 0.05’in üzerinde olup, normal dağılım varsayımı hiçbir durumda reddedilmemektedir.
+- Height değişkeninin zaten başlangıçtan itibaren normal dağılıma yakın olduğu görülmektedir. Örneklem büyüklüğü arttıkça dağılım daha da belirgin hale gelmekte ancak normalleşme süreci diğer değişkenler kadar dramatik olmamaktadır.
+- **Sonuç:** Height değişkeni için CLT etkisi diğer değişkenlere kıyasla daha az gözlemlenmektedir çünkü zaten normal bir dağılıma sahiptir.
+
+---
+
+### **3. Hip Değişkeni**
+- **Örneklem büyüklüğü 5 ve 10 olduğunda**, tüm normallik testlerinde p-değerleri 0.05’in altında olup, normal dağılım varsayımı kesin olarak reddedilmiştir.
+- **Örneklem büyüklüğü 30 ve 50 olduğunda**, Shapiro-Wilk testi hala normal dağılımı reddederken, Anderson-Darling ve Cramér-von Mises testlerinde p-değerleri yükselmeye başlamıştır. Bu, normalleşmeye doğru bir eğilim olduğunu ancak tam olarak sağlanmadığını gösterir.
+- **Sonuç:** Hip değişkeni başlangıçta belirgin şekilde normal dağılıma uymamaktadır. Ancak örneklem büyüklüğü arttıkça normal dağılıma yaklaşmaktadır. Yine de Forearm’a kıyasla daha geç normalleşmektedir.
+
+# 4. Soru
+
+## Satır ve Değişken Seçimi
+Aşağıdaki kod bloğu kullanılarak, 30 adet satır ve mevcut 3 değişşkenden birisi tamamen rastgele seçilmiştir.
+```{r}
+set.seed()
+indeks1 <- sort(sample(1:nrow(data),size = 30,replace = F))
+set.seed()
+indeks2 <- sample(1:ncol(data),size=1)
+kitle<- data[,indeks2]
+orneklem<- data[indeks1,indeks2]
+```
+
+## %99 Güven Düzeyinde Kitle Ortalaması 
+```{r}
+# standart sapma biliniyorsa
+
+orneklem_ortalama <- mean(orneklem)
+kitle_ortalama <- mean(kitle)
+kitle_standart_sapması <- sqrt(sum((kitle-kitle_ortalama)^2)/length(kitle))
+standart_hata <- kitle_standart_sapması/sqrt(length(orneklem))
+
+# Güven aralığını bir değişkene ata
+guven_araligi <- 0.99
+
+# Üst sınır için (1 + güven aralığı) / 2 işlemini yap
+p_degeri <- (1 + guven_araligi) / 2 # 0.975
+
+# Z-değerini hesapla
+z_degeri <- qnorm(p_degeri)# 1.959964
+
+maksimum_deger <- orneklem_ortalama+(z_degeri*standart_hata)
+minimum_deger <- orneklem_ortalama-(z_degeri*standart_hata)
+paste0("%99 Güvenle Kitle ortalaması (", 
+       "\u03bc", # Unicode ile mu
+       ") değerleri: ", 
+       minimum_deger, 
+       " ≤ ", 
+       "\u03bc", 
+       " ≤ ", 
+       maksimum_deger)
+paste0("Gerçek Kitle Ortalaması (", 
+       "\u03bc", # Unicode ile mu
+       "): ", 
+       round(kitle_ortalama, 4))
+```
+
+Kitle ortalamasının belirli bir aralıkta bulunma olasılığı **%99 güven düzeyi** ile hesaplanmıştır. **Kitle varyansı bilindiğinden**, güven aralığı **Z-dağılımı** kullanılarak belirlenmiştir. **Örneklem büyüklüğü \( n \geq 30 \) olduğundan**, Merkezi Limit Teoremi (CLT) gereği örneklem ortalamasının dağılımı **normal kabul edilmiştir**.
+
+### **Güven Aralığı Formülü**
+\[
+\bar{x} - Z_{\alpha/2} \cdot \frac{\sigma}{\sqrt{n}} \ < \ \mu \ < \ \bar{x} + Z_{\alpha/2} \cdot \frac{\sigma}{\sqrt{n}}
+\]
+
+Burada:
+
+- \( \bar{x} \) → **Örneklem Ortalaması**,
+- \( \mu \) → **Gerçek Kitle Ortalaması**,
+- \( \sigma \) → **Kitle Standart Sapması**,
+- \( n \) → **Örneklem Büyüklüğü**,
+- \( Z_{\alpha/2} \) → **Standart Normal Dağılımdan Kritik Değer** (**\( Z_{\alpha/2} \approx 2.576 \)**).
+
+
+**Hesaplanan güven aralığı şu şekildedir:**
+\[
+98.8239 \leq \mu \leq 106.0493
+\]
+
+**Gerçek kitle ortalaması:**  
+\[
+\mu = 100.4107
+\]
+
+### **Sonuç ve Değerlendirme**
+- **%99 güven düzeyinde hesaplanan güven aralığı**, **\( \mu \)** değerinin **\( 98.8239 \) ile \( 106.0493 \)** arasında olacağını göstermektedir.
+- **Gerçek kitle ortalaması \( \mu = 100.4107 \) olduğundan**, bu değer güven aralığı içinde yer almaktadır.
+- **Bu durum, hesaplanan güven aralığının doğru bir tahmin sunduğunu göstermektedir.** Eğer kitle varyansı bilinmeseydi, bu hesaplama için **t-dağılımı** kullanılması gerekirdi.
+
+
+## %99 Güven Düzeyinde Kitle Varyansı 
+
+```{r}
+# Örneklem varyansı hesaplanıyor
+orneklem_varyans <- var(orneklem)
+
+# Örneklem büyüklüğü
+n <- length(orneklem)
+
+# Ki-Kare kritik değerleri (%90 güven düzeyi, serbestlik derecesi n-1)
+guven_araligi<- 0.90
+alpha <- 1- guven_araligi  # %90 güven için alfa = 1 - 0.90 = 0.10
+chi_sq_low <- qchisq(alpha/2, df = n-1, lower.tail = TRUE)
+chi_sq_high <- qchisq(1 - alpha/2, df = n-1, lower.tail = TRUE)
+
+# Kitle varyansı için güven aralığı
+alt_sinir <- ((n-1) * orneklem_varyans) / chi_sq_high
+ust_sinir <- ((n-1) * orneklem_varyans) / chi_sq_low
+
+# Sonuçları yazdır
+paste0("%99 Güvenle Kitle Varyansı (", 
+       "\u03c3^2", # Unicode ile sigma kare (σ²)
+       ") değerleri: ", 
+       round(alt_sinir, 4), 
+       " ≤ ", 
+       "\u03c3^2", 
+       " ≤ ", 
+       round(ust_sinir, 4))
+
+paste0("Gerçek Kitle Varyansı (", 
+       "\u03c3^2", # Unicode ile sigma kare (σ²)
+       "): ", 
+       round(kitle_standart_sapması^2, 4))
+```
+Kitle varyansının belirli bir aralıkta bulunma olasılığını ölçmek için **%90 güven düzeyi** ile güven aralığı hesaplanmıştır. **Güven aralığı hesaplanırken Ki-Kare dağılımı kullanılmıştır**, çünkü varyans pozitif değerler alır ve Ki-Kare dağılımı negatif değer içermeyen bir dağılımdır.
+
+---
+
+### **Güven Aralığı Formülü**
+Kitle varyansı için **Ki-Kare dağılımına dayalı güven aralığı** şu şekilde hesaplanmaktadır:
+
+\[
+\frac{(n-1) s^2}{\chi^2_{\alpha/2, \, (n-1)}} \ < \ \sigma^2 \ < \ \frac{(n-1) s^2}{\chi^2_{1-\alpha/2, \, (n-1)}}
+\]
+
+Burada:
+- \( s^2 \) → **Örneklem Varyansı** (`var(orneklem)`)
+- \( n \) → **Örneklem Büyüklüğü** (`length(orneklem)`)
+- \( \sigma^2 \) → **Gerçek Kitle Varyansı**
+- \( \chi^2_{\alpha/2, (n-1)} \) ve \( \chi^2_{1-\alpha/2, (n-1)} \) → **Ki-Kare dağılımından kritik değerler**.
+
+---
+
+### **Hesaplanan Güven Aralığı**
+
+Kod ile hesaplanan **%90 güven düzeyi için kitle varyansı güven aralığı:**
+\[
+38.9396 \leq \sigma^2 \leq 93.58
+\]
+
+**Gerçek Kitle Varyansı:**  
+\[
+\sigma^2 = 59.0127
+\]
+
+---
+
+### **Sonuç ve Değerlendirme**
+
+- **%90 güven düzeyinde hesaplanan güven aralığı**, **\( \sigma^2 \)** değerinin **\( 38.9396 \) ile \( 93.58 \)** arasında olacağını göstermektedir.
+- **Gerçek kitle varyansı \( \sigma^2 = 59.0127 \) olduğundan**, bu değer güven aralığı içinde yer almaktadır.
+- **Bu durum, hesaplanan güven aralığının doğru bir tahmin sunduğunu göstermektedir.**
+- **Güven aralığının hesaplanmasında Ki-Kare dağılımı kullanılmıştır**, çünkü **varyans hesaplamaları için normal dağılım uygun değildir**. Ki-Kare dağılımı, negatif varyans değerleri içermeyen ve serbestlik derecesine bağlı olarak asimetrik bir dağılım gösteren bir istatistiksel araçtır.
+
+# 5. Soru
+
+## **Kodun Açıklaması**
+Bu kod, yeni bir ilacın **belli bir hastalığa sahip erkek hastaları en az %80 oranında iyileştirdiği** iddiasını test etmek için bir simülasyon gerçekleştirir. **Gerçek iyileşme oranı %90, hipotezde varsayılan oran ise %80 olarak belirlenmiş olup, örneklem büyüklüğü \( n = 100 \) ve toplam 10.000 simülasyon çalıştırılmıştır.** Anlamlılık düzeyi \( \alpha = 0.05 \) olarak alınarak, **H₀ hipotezi doğru kabul edildiğinde rastgele iyileşme oranları üretilmiş ve gerçek iyileşme oranına göre farklı örneklem değerleri simüle edilmiştir.** Standart hata hesaplandıktan sonra kritik değer \( Z = 1.645 \) ile karşılaştırılmış ve **I. Tip hata (H₀ doğruyken yanlışlıkla reddedilmesi) ve II. Tip hata (H₀ yanlışken yanlışlıkla kabul edilmesi) oranları kaydedilmiştir.** Sonuç olarak, **I. Tip Hata Oranı (\(\alpha\)) H₀ doğruyken yanlışlıkla reddedilen testlerin oranını, II. Tip Hata Oranı (\(\beta\)) ise H₀ yanlışken kabul edilen testlerin oranını göstermektedir.** Testin gücü (\(1 - \beta\)), H₀ yanlış olduğunda bunu doğru tespit etme olasılığını ifade etmektedir.
+
+```{r}
+
+# Rastgelelik için seed sabitlenmesi
+set.seed()
+
+gercek_iyilestirme_orani <- 0.90  # Gerçek iyileştirme oranı
+hipotez_orani <- 0.80  # H0'da kullanılan oran
+n <- 100  # Örneklem büyüklüğü
+simulasyon_sayisi <- 10000  # Simülasyon sayısı
+
+tip1_hata_sayisi <- 0  # I. Tip hata sayısı
+tip2_hata_sayisi <- 0  # II. Tip hata sayısı
+alpha <- 0.05  # İstatistiksel anlamlılık düzeyi
+
+# Simülasyon
+for (i in 1:simulasyon_sayisi) {
+  # Rastgele örnekleme (H0 hipotezi doğru varsayımı altında)
+  ornek_h0 <- rbinom(1, n, hipotez_orani)
+  ornek_orani_h0 <- ornek_h0 / n
+  
+  # Rastgele örnekleme (gerçek iyileştirme oranı ile)
+  ornek_h1 <- rbinom(1, n, gercek_iyilestirme_orani)
+  ornek_orani_h1 <- ornek_h1 / n
+  
+  # H0 hipotezi altındaki standart hata
+  std_error_h0 <- sqrt((hipotez_orani * (1 - hipotez_orani)) / n)
+  
+  # Kritik değer (Z-testi için)
+  kritik_deger <- qnorm(1 - alpha)
+  
+  # Test istatistiği (H0 hipotezi için)
+  z_degeri_h0 <- (ornek_orani_h0 - hipotez_orani) / std_error_h0
+  
+  # Test istatistiği (H1 hipotezi için)
+  z_degeri_h1 <- (ornek_orani_h1 - hipotez_orani) / std_error_h0
+  
+  # I. Tip Hata: H0 doğru ama reddedildi
+  if (z_degeri_h0 > kritik_deger) {
+    tip1_hata_sayisi <- tip1_hata_sayisi + 1
+  }
+  
+  # II. Tip Hata: H0 yanlış ama reddedilmedi
+  if (z_degeri_h1 <= kritik_deger) {
+    tip2_hata_sayisi <- tip2_hata_sayisi + 1
+  }
+}
+
+# Sonuçların Hesaplanması
+tip1_hata_orani <- tip1_hata_sayisi / simulasyon_sayisi
+tip2_hata_orani <- tip2_hata_sayisi / simulasyon_sayisi
+test_gucu <- 1 - tip2_hata_orani
+
+# Sonuçların Yazdırılması
+cat("I. Tip Hata Oranı (α):", round(tip1_hata_orani, 4), "\n")
+cat("II. Tip Hata Oranı (β):", round(tip2_hata_orani, 4), "\n")
+cat("Testin Gücü (1 - β):", round(test_gucu, 4), "\n")
+
+```
+
+## Hipotezler
+- **H₀ (Null Hipotezi):** İlacın iyileştirme oranı en fazla **%80**’dir. (\( p \leq 0.80 \))
+- **H₁ (Alternatif Hipotez):** İlacın iyileştirme oranı **%80’den büyüktür**. (\( p > 0.80 \))
+
+---
+
+## I. Tip Hata (α)
+- **Tanım:** H₀ doğru olduğu halde reddedilmesi.
+- **Gerçek Durum:** İlacın iyileştirme oranı aslında **%80 veya daha azdır**, ancak test **yanlışlıkla H₀'ı reddeder** ve ilacın daha etkili olduğunu söyler.
+- **Sonuç:** **İlaç aslında etkili değilken, etkili olduğu düşünülerek piyasaya sürülebilir.**
+- **Hesaplanan I. Tip Hata Oranı:** **\( \alpha = 0.0444 \) (%4.44)**  
+  - **Beklenen %5 seviyesine yakın olması**, testin anlamlılık seviyesine uygun çalıştığını gösterir.
+
+---
+
+## **II. Tip Hata (β)**
+- **Tanım:** H₀ yanlış olduğu halde reddedilmemesi.
+- **Gerçek Durum:** İlacın iyileştirme oranı **%90’dır**, ancak test **H₀'ı yanlışlıkla kabul ederek** ilacın daha etkili olduğunu tespit edemez.
+- **Sonuç:** **İlaç aslında daha etkiliyken, bu fark anlaşılamaz ve ilacın geliştirilme süreci ertelenebilir.**
+- **Hesaplanan II. Tip Hata Oranı:** **\( \beta = 0.1215 \) (%12.15)**  
+  - **Düşük olması**, testin güçlü olduğunu gösterir.
+
+---
+
+## Testin Gücü (\(1 - β\))
+- **Tanım:** H₀ yanlış olduğunda **doğru şekilde reddedilme olasılığıdır**.
+- **Sonuç:** **Test, ilacın gerçekten daha etkili olduğunu %87.85 doğrulukla tespit etmektedir.**
+- **Hesaplanan Test Gücü:** **\( 1 - \beta = 0.8785 \) (%87.85)**  
+  - **Yüksek olması**, testin **H₀ yanlışken doğru karar verme yeteneğinin güçlü olduğunu** gösterir.
+
+---
+
+## Sonuç ve Değerlendirme
+- **I. Tip hata oranı \( \alpha = 0.0444 \)** olduğundan, test **%5 anlamlılık seviyesine uygun şekilde çalışmaktadır**.
+- **II. Tip hata oranı \( \beta = 0.1215 \)** olduğundan, test **H₀ yanlışken doğru kararı verme gücü %87.85'tir**.
+- **Test gücü (\(1 - \beta\)) %87.85 olduğundan**, testin ilacın etkisini doğru tespit etme olasılığı yüksektir.
+
+**Sonuç olarak, test güçlü bir şekilde ilacın iyileştirme oranının %80’den fazla olduğunu göstermektedir.**
+
+
+
+
+

@@ -1,0 +1,263 @@
+---
+title: "Uygulamalı Zaman Serisi Analizi SARIMA Ödevi"
+author: "Tarık Tuna Taşaltı"
+date: "2024-05-08"
+output: 
+runtime: shiny
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r, echo=FALSE,message=FALSE, warning=FALSE, error=FALSE}
+library(forecast)
+library(lmtest)
+library(tseries)
+library(ggplot2)
+
+df <- read.csv("odev.csv")
+df = subset(df, select = c(Quantity))
+```
+
+# Veri Seti ile İlgili Temel Bilgiler
+
+Veriseti, Norveç'te 2007-2017 yılları arası aylık bazda satılan toplam araç sayısını temsil etmektedir.\
+Kaynak: <https://www.kaggle.com/datasets/dmi3kno/newcarsalesnorway?select=norway_new_car_sales_by_month.csv>
+
+## Veri Seti Analizi
+
+```{r, echo=TRUE}
+ts_df <- ts(df, frequency = 12, start = c(2007, 1), end = c(2017, 1))
+boxplot(ts_df, horizontal = TRUE, xlab = "", ylab = "Değerler",
+        main = "Veri Setinin BoxPlot Grafiği")
+```
+
+Aylık satış miktarlarının 11000-13000 bandında yığıldığı ve verinin dağılımının sola çarpık olduğu gözükmektedir.
+
+```{r series, echo = TRUE}
+ts.plot(ts_df,main="Verinin Time Series Plotu")
+
+```
+
+```{r, echo=TRUE}
+plot(decompose(ts_df))
+```
+
+2009 yılında negatif yönlü bir trend oluştuğu ancak genel grafiğe bakıldığında yukarı yönlü toplamsal bir trend olduğu gözükmektedir. Ayrıca mevsimsel etki de belirgin bir şekilde gözükmektedir.
+
+# Üssel düzeltme (Exponential smoothing)
+
+```{r, echo=TRUE}
+holtwintermodel=HoltWinters(ts_df,seasonal="additive")
+plot(holtwintermodel)
+```
+
+Mevsimselliğin toplamsal olduğu model seçilmiştir. Modelin veriyi iyi şekilde taklit ettiği gözlemlenmiştir.
+
+```{r, echo=TRUE}
+holtwinterforecast=forecast(holtwintermodel,h=12)
+plot(holtwinterforecast)
+```
+
+Modelin, %80 ve %95 güven aralığında dar aralıklarda tahminlerde bulunduğu gözükmektedir. Tahminlemede mevsimsel etkinin devam ettiği gözükmektedir. Sonuç olarak, iyi bir model elde edildiği söylenebilir.
+
+12 aylık süreçte HoltWinters ile yapılan forecastler:
+
+```{r, echo=TRUE}
+holtwinterforecast
+```
+
+Tahminlerin 14000 bandında olduğu gözükmüştür.
+
+# SARIMA Modelin Seçilmesi
+
+## Fark Alınmamış Veri
+
+Fark Alınmamış Verinin ACF ve PACF Değerleri
+
+```{r, echo=TRUE}
+ggAcf(ts_df, lag.max = 50) + ggtitle("Orijinal Verinin ACF Değerleri")
+
+ggPacf(ts_df, lag.max = 50) + ggtitle("Orijinal Verinin PACF Değerleri")
+
+```
+
+ACF'ye bakıldığında çok sayıda anlamlı lag olduğu ve verinin durağan olmadığına karar verilmiştir. Bu yüzden 1 normal fark alınmış veriye bakılmaya karar verilmiştir.
+
+## 1 Normal Fark Alınmış Veri
+
+```{r, echo=TRUE}
+diff1=diff(ts_df,1)
+ggAcf(diff1, lag.max = 50) + ggtitle("1 Normal Fark Alınmış Verinin ACF Değerleri")
+ggPacf(diff1, lag.max = 50) + ggtitle("1 Normal Fark Alınmış Verinin PACF Değerleri")
+```
+
+1 Normal fark alınmış verinin nispeten durağınlaştığı gözlemlenmiştir. ACF'ye bakıldığında 1 mevsimsel olmayan anlamlı lag olduğu, PACF'ye bakıldığında ise 2 olmayan anlamlı lag olduğu gözlemlenmiştir. Yani mevsimsel olmayan kısım için ARIMA(2,1,0), ARIMA(0,1,1) ve ARIMA(2,1,1) denenebilir. Mevsimsel kısım için ACF'de ve PACF'de mevsimsel kısımda hiç anlamlı lag gözükmemektedir. Bu yüzden, her ikisinin de yavaşça azaldığı varsayımında bulunulursa mevsimsel kısım için sadece ARIMA(1,0,1) denenebilir. Ancak, yine de bir mevsimsel fark alınmasının sağlıklı olduğuna karar verilmiştir.
+
+```{r, echo=TRUE}
+automodel=auto.arima(ts_df,stepwise=FALSE)
+automodel
+```
+
+Auto Arima'nın önerdiği model bir önceki paragrafta bahsedilen görüşü desteklemektedir. Ancak, 1 mevsimsel fark alınmış veriye de bakılmalıdır.
+
+```{r, echo=TRUE}
+coeftest(automodel)
+```
+
+ARIMA(2,1,0)(1,0,1) için ar1, ar2, sar1, sma1'in hepsinin anlamlı olduğu gözükmüştür.
+
+```{r, echo=TRUE}
+tsdiag(automodel)
+```
+
+Standardize edilmiş artıklara bakıldığında 0 etrafında bir dağılıma sahip olduğu gözlemlenmiştir. Artıklar arasında bir tane anlamlı otokorelasyon gözükmektedir ancak sınırdan ve bir tane olduğu için görmezden gelinebilir. p value'lar da sınırın oldukça üstünde olduğu gözükmektedir.
+
+```{r, echo=TRUE}
+checkresiduals(automodel)
+```
+
+Bir önceki paragraftaki anlatılanları bu grafik desteklemektedir. Ek olarak artık dağılımların normal dağılıma uygun olduğuna sezgisel olarak karar verilmiştir.
+
+```{r, echo=TRUE}
+shapiro.test(automodel$residuals)
+```
+
+Shapiro-Wilk normality testi sonucunda, H0 hipotezi reddedilemez, yani veri setinin artık değerleri normal dağılıma sahip olduğu kabul edilebilir.
+
+```{r, echo=TRUE}
+Box.test(automodel$residuals,lag=6)
+Box.test(automodel$residuals,lag=12)
+Box.test(automodel$residuals,lag=24)
+Box.test(automodel$residuals,lag=36)
+```
+
+p valueları, 6.lagten 12.lage geçerken artış, 24 ve 36. laglerde ise düşüş gözlemlenmiştir. Ancak p valueları genel olarak yeterince yüksek denebilir. Bu doğrultuda model geçerlidir denebilir. Ancak, daha iyi modeller mümkün olup olmadığı için 1 mevsimsel fark alınmış verinin de kontrol edilmesi gereklidir.
+
+## 1 Normal Fark ve 1 Mevsimsel Fark Alınmış Veri
+
+```{r, echo=TRUE}
+diff112=diff(diff1,12)
+ggAcf(diff112, lag.max = 50) + ggtitle("1 Normal Fark ve 1 Mevsimsel Fark Alınmış Verinin ACF Değerleri")
+ggPacf(diff112, lag.max = 50) + ggtitle("1 Normal Fark 1 Mevsimsel Fark Alınmış Verinin PACF Değerleri")
+```
+
+ACF'ye bakıldığında mevsimsel kısımda 12, 24, 36 , 48'de yavaşça azalan anlamlı lagler gözükmüştür. PACF'de ise 12 ve 24. laglerde spikeların olduğu ve 36. ve 48.laglerde cut off olduğu gözükmüştür. Bu yüzden mevsimsel kısım için ARIMA (2,1,0) olduğuna karar verilmiştir.
+
+```{r, echo=TRUE}
+model1=arima(ts_df,order=c(2,1,0),seasonal=list(order=c(2,1,0),period=12))
+model1
+coeftest(model1)
+```
+
+Bütün parametrelerin anlamlı olduğu gözlenmiştir.
+
+```{r, echo=TRUE}
+model2=arima(ts_df,order=c(0,1,1),seasonal=list(order=c(2,1,0),period=12))
+model2
+coeftest(model2)
+```
+
+Bütün parametrelerin anlamlı olduğu gözlenmiştir.
+
+```{r, echo=TRUE}
+
+model3=arima(ts_df,order=c(2,1,1),seasonal=list(order=c(2,1,0),period=12))
+model3
+coeftest(model3)
+```
+
+ma1'in anlamlı olmadığı gözüktüğü için bu modelden vazgeçilmiştir.
+
+```{r, echo=TRUE}
+tsdiag(model1)
+```
+
+Standardize edilmiş artıklara bakıldığında 0 etrafında bir dağılıma sahip olduğu gözlemlenmiştir. Artıklar arasında bir otokorelasyon gözükmemektedir. p value'lar da sınırın oldukça üstünde olduğu gözükmektedir.
+
+```{r, echo=TRUE}
+tsdiag(model2)
+```
+
+Standaridize edilmiş artıklara bakıldığında 0 etrafında varyans olduğu gözükmektedir Artıklar arasında yer yer anlamlı otokorelasyon gözükmektedir. p value'lar ise eşik değerin altında değerler aldığı gözlemlenmiştir.
+
+```{r, echo=TRUE}
+Box.test(model1$residuals,lag=6)
+Box.test(model1$residuals,lag=12)
+Box.test(model1$residuals,lag=24)
+Box.test(model1$residuals,lag=36)
+```
+
+p value'ların mevsimsel kısmının Ljung Box değerleri için yüksek olduğu gözlenmiştir.
+
+```{r, echo=TRUE}
+Box.test(model2$residuals,lag=6)
+Box.test(model2$residuals,lag=12)
+Box.test(model2$residuals,lag=24)
+Box.test(model2$residuals,lag=36)
+```
+
+p value'ların mevsimsel kısmının Ljung Box değerleri için düşük olduğu gözlenmiştir.
+
+```{r, echo=TRUE}
+checkresiduals(model1)
+
+```
+
+Artıklar arasında otokorelasyon olmadığı bu grafikte de desteklenmektedir. Artıkların 0 etrafında dağılım gösterdiği gözükmektedir. Artıkların normal dağılıma uyduğuna sezgisel olarak karar verilmiştir.
+
+```{r, echo=TRUE}
+checkresiduals(model2)
+```
+
+Artıklar arasındaki otokorelasyon gözükmektedir. Artıkların 0 etrafında bir dağılım gösterdiği görülmüştür. Artıkların normal dağılıma uyduğuna sezgisel olarak karar verilmiştir.
+
+```{r, echo=TRUE}
+shapiro.test(model1$residuals)
+
+```
+
+Shapiro-Wilk normality testi sonucuna göre, model1'in residual değerleri normal dağılıma sahip olmadığına dair yeterli kanıt bulunmamaktadır.
+
+```{r, echo=TRUE}
+shapiro.test(model2$residuals)
+```
+
+Shapiro-Wilk normality testi sonucuna göre, model2'nin residual değerleri normal dağılıma sahip olmadığına dair yeterli kanıt bulunmamaktadır. Dolayısıyla model 2'nin de yeterli olmadığına karar verilmiştir.
+
+## SARIMA Modellerin Kıyaslanması
+
++----------------------+-----------------------------------+------------------------------------------+------------------------------------+--------------------------------------+-----------------------------+-----------------------------+
+| Model                | Bütün Parametrele Significant mı? | Artıklarda Anlamlı Otokorelasyon var mı? | Artıklar Normal Dağılıma Uygun mu? | P Value'lar Eşik Değerin Üstünde mi? | Log Likelihood Değerleri    | AIC Değerleri               |
++======================+===================================+==========================================+====================================+======================================+=============================+=============================+
+| ARIMA                | EVET✅                            | HAYIR✅                                  | EVET✅                             | EVET✅                               | -1005.82                    | 2021.65                     |
+|                      |                                   |                                          |                                    |                                      |                             |                             |
+| (2,1,0)(1,0,1)       |                                   |                                          |                                    |                                      |                             |                             |
++----------------------+-----------------------------------+------------------------------------------+------------------------------------+--------------------------------------+-----------------------------+-----------------------------+
+| ARIMA                | EVET✅                            | HAYIR✅                                  | EVET✅                             | EVET✅                               | -912.74                     | 1835.47                     |
+|                      |                                   |                                          |                                    |                                      |                             |                             |
+| (2,1,0)(2,1,0)       |                                   |                                          |                                    |                                      |                             |                             |
++----------------------+-----------------------------------+------------------------------------------+------------------------------------+--------------------------------------+-----------------------------+-----------------------------+
+| ARIMA                | EVET✅                            | EVET❌                                   | EVET✅                             | HAYIR❌                              | DEĞERLENDİRME DIŞI KALDI ⛔ | DEĞERLENDİRME DIŞI KALDI ⛔ |
+|                      |                                   |                                          |                                    |                                      |                             |                             |
+| (0,1,1)(2,1,0)       |                                   |                                          |                                    |                                      |                             |                             |
++----------------------+-----------------------------------+------------------------------------------+------------------------------------+--------------------------------------+-----------------------------+-----------------------------+
+| ARIMA                | HAYIR❌                           | DEĞERLENDİRME DIŞI KALDI ⛔              | DEĞERLENDİRME DIŞI KALDI ⛔        | DEĞERLENDİRME DIŞI KALDI ⛔          | DEĞERLENDİRME DIŞI KALDI ⛔ | DEĞERLENDİRME DIŞI KALDI ⛔ |
+|                      |                                   |                                          |                                    |                                      |                             |                             |
+| (2,1,1)(2,1,0)       |                                   |                                          |                                    |                                      |                             |                             |
++----------------------+-----------------------------------+------------------------------------------+------------------------------------+--------------------------------------+-----------------------------+-----------------------------+
+
+: Finale kalan iki model arasından düşük AIC değeri ve yüksek log Likelihood değerine sahip olan ARIMA (2,1,0)(2,1,0) modeli seçilmiştir.
+
+## Final Modeli ile Tahminleme
+```{r, echo=TRUE}
+finalforecast=forecast(model1,h=12)
+plot(finalforecast)
+```
+
+Tahminlerin güven aralığının dar olduğu gözükmektedir.HoltWinters'a benzer bir grafik oluştuğu fark edilmiştir.
+```{r, echo=TRUE}
+finalforecast
+```
+Tahminlerin 13000-14000 bandında olduğu gözükmektedir.
+
+

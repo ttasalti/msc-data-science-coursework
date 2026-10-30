@@ -1,0 +1,1028 @@
+---
+title: "DSM 5007 DENETİMLİ İSTATİSTİKSEL ÖĞRENME ARA SINAV"
+author: |
+  Tarık Tuna Taşaltı  
+date: "`2024/11/26`"
+documentclass: ctexart
+output: 
+  rticles::ctex:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+lang: "tr"
+header-includes:
+  - \usepackage[margin=2.5cm, top=3cm, bottom=3cm]{geometry}  # Kenar boşluklarını ayarlar
+keywords: 
+---
+
+
+
+# Veri Seti
+
+## Veri Seti Açıklaması
+
+Bu veri seti, 2014-2015 yılları arasında yayınlanan filmlere ait 231 gözlemden oluşmaktadır. **Hedef değişken**, bir filmin toplam **hasılatı (Gross)** olup, diğer değişkenler bu hasılatı tahmin etmeye yönelik faktörlerdir.
+
+### Genel Özet:
+- **Hedef Değişken**: `Gross` (Toplam Hasılat).
+- **Eksik Değerler**: 
+  - `Budget` sütununda **1 eksik değer** bulunmaktadır.
+  - `Screens` sütununda **10 eksik değer** bulunmaktadır.
+  - `Aggregate Followers` sütununda **35** eksik değer bulunmaktadır.
+
+Bu veri seti, filmlerin toplam hasılatını etkileyen faktörlerin analiz edilmesi ve bu faktörlerle `Gross` değişkeninin tahmin edilmesi amacıyla kullanılacaktır.
+
+## Veri Seti Ön İşleme Aşamaları
+```{r include=FALSE}
+library(readxl)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(corrplot)
+library(GGally)
+library(e1071)
+library(tidyverse)
+
+data <- read_excel("data.xlsx")
+data <- as.data.frame(data)
+summary(data)
+```
+
+
+```{r include=FALSE}
+
+rownames(data) <- data$Movie
+data <- data[, !colnames(data) %in% "Movie"]
+data$Year <- as.factor(data$Year)
+data$Genre <- as.factor(data$Genre) 
+colnames(data)[colnames(data) == "Aggregate Followers"] <- "Followers"
+
+data$SequelBased <- ifelse(data$Sequel == 1, "Not Sequel Based", "Sequel Based")
+data <- data[, !names(data) %in% "Sequel"]
+data <- data[, c(setdiff(names(data), "Gross"), "Gross")]
+
+
+colSums(is.na(data))
+```
+### Kategorik Değişkenlerin Seçilmesi ve Değişken isimlendirilmesi
+- Veri setinde her satır için eşsiz bir değere sahip olan **`Movie`** değişkeni veri setinden kaldırılmış ve satır ismi olarak atanmıştır.
+- **`Year`** değişkeninde yalnızca 2014 ve 2015 yıllarına ait iki farklı değer bulunduğundan, bu değişken **kategorik** olarak ele alınmıştır.
+- **`Genre`** değişkeni, filmin türüne ait bir değişken olup, verinin çift sivri uca sahip olmasından dolayı, sayısal değerler sırasal bir ilişki barındırmadığı varsayılmıştır. Sıralı bir yapı olması durumunda, değişkenin daha simetrik ve tek uçlu bir dağılım göstermesi beklenirdi. Bu nedenle, **kategorik** olarak ele alınmıştır.
+- **`Sequel`** değişkeninde, 231 gözlemin 188'i "1" değerini aldığından, bu değişken filmin devam serisi olup olmaması üzerinden iki kategoriye ayrılmıştır: **"Not Sequel Based"** ve **"Sequel Based"**.
+- **`Aggregate Followers`** değişkeni, isimlendirmede boşluk karakteri barındırdığı ve kod yazmada sıkıntı yaratmaması adına **`Followers`** olarak değiştirilmiştir.
+
+### Verilerin Çarpıklık Analizi
+
+```{r include=FALSE}
+# Sadece sayısal sütunları seçme
+numerical_data <- data[, sapply(data, is.numeric)]
+
+# Her bir kolonun çarpıklığını hesapla ve yazdır
+for (col_name in colnames(numerical_data)) {
+  skew_value <- skewness(numerical_data[[col_name]], na.rm = TRUE) # Çarpıklık değeri
+  cat("Kolon:", col_name, "- Çarpıklık:", skew_value, "\n")
+  
+library(MASS)
+
+# Orijinal veriyi koruma ve yeni dataframe oluşturma
+boxcox_data <- data
+# Comments ve Dislikes için +1 ekle
+boxcox_data$Comments <- boxcox_data$Comments + 1
+boxcox_data$Dislikes <- boxcox_data$Dislikes + 1
+# Box-Cox dönüşümü yapılacak değişkenlerin isimleri
+variables_to_transform <- c("Budget", "Screens", "Views", "Likes", "Dislikes", "Comments", "Followers", "Gross")
+
+# Lambda değerlerini saklamak için bir liste oluştur
+lambda_values <- list()
+
+# Box-Cox dönüşümü döngüsü
+for (col_name in variables_to_transform) {
+  # Kontrollü sütun erişimi için
+  if (col_name %in% names(boxcox_data)) {
+    # Lineer model oluşturma
+    model <- lm(as.formula(paste0(col_name, " ~ 1")), data = boxcox_data)
+    
+    # En uygun lambda değerini bulma ve kaydetme
+    lambda <- boxcox(model, lambda = seq(-2, 2, 0.1))$x[which.max(boxcox(model, lambda = seq(-2, 2, 0.1))$y)]
+    lambda_values[[col_name]] <- lambda  # Lambda değerini kaydet
+    
+    # Box-Cox dönüşümünü uygulama ve yeni dataframe'e kaydetme
+    boxcox_data[[col_name]] <- (boxcox_data[[col_name]]^lambda - 1) / lambda
+  } else {
+    warning(paste("Değişken", col_name, "veri setinde bulunamadı."))
+  }
+}
+# Sonuç kontrolü
+str(boxcox_data)
+}
+```
+Aşağıda veri setindeki sayısal değişkenlerin çarpıklık değerleri tablo halinde verilmiştir:
+
+| **Değişken**  | **Çarpıklık** |
+|---------------|---------------|
+| `Ratings`     | -0.3368415    |
+| `Budget`      | 1.570708      |
+| `Screens`     | -0.4301155    |
+| `Sentiment`   | 0.2726327     |
+| `Views`       | 2.841646      |
+| `Likes`       | 9.302494      |
+| `Dislikes`    | 6.234003      |
+| `Comments`    | 6.413331      |
+| `Followers`   | 2.778221      |
+| `Gross`       | 2.566388      |
+
+- Çarpıklık değerlerine göre, -1'den küçük bir değişken bulunmamaktadır. Çoğu sayısal değişkenin çarpıklık değeri **+1**'in üzerinde olup, bu değişkenlerin **sağa çarpık** (pozitif çarpıklık) olduğu söylenebilir. 
+- **Sağa çarpıklığı azaltmak** ve verilerin dağılımını iyileştirmek için **Box-Cox dönüşümü** uygulanmıştır.
+- Ek olarak, **`Screens`** değişkeni sağa çarpık olmamasına rağmen, çift sivri uçlu bir dağılım gösterdiği için bu durumu azaltmak adına bu değişkene de **Box-Cox dönüşümü** uygulanmıştır.
+- **`Ratings`** ve **`Sentiment`** değişkenleri, çarpıklık değerlerinin düşük olması nedeniyle dönüşüm yapılmadan ham halleriyle bırakılmıştır.
+- **`Comments`** ve **`Dislikes`** değişkenleri, veri setinde **0 değerine sahip gözlemler** içerdiği için, **Box-Cox dönüşümü** öncesinde bu kolonlara **1 eklenmiştir**. Bu işlem, dönüşüm sırasında matematiksel hataların (örneğin, logaritma hesaplamalarında tanımsızlık) önlenmesi amacıyla yapılmıştır.
+
+
+```{r include=FALSE}
+# Sadece sayısal sütunları seçme
+numerical_data <- boxcox_data[, sapply(data, is.numeric)]
+
+# Her bir kolonun çarpıklığını hesapla ve yazdır
+for (col_name in colnames(numerical_data)) {
+  skew_value <- skewness(numerical_data[[col_name]], na.rm = TRUE) # Çarpıklık değeri
+  cat("Kolon:", col_name, "- Çarpıklık:", skew_value, "\n")
+}
+```
+### Box-Cox Dönüşümü Sonrası Çarpıklık Analizi
+
+Aşağıda, Box-Cox dönüşümü uygulandıktan sonra değişkenlerin çarpıklık değerleri verilmiştir:
+
+| **Değişken**  | **Çarpıklık** |
+|---------------|---------------|
+| `Ratings`     | -0.3368415    |
+| `Budget`      | 0.002664927   |
+| `Screens`     | -0.7160448    |
+| `Sentiment`   | 0.2726327     |
+| `Views`       | -0.1189903    |
+| `Likes`       | 0.1092539     |
+| `Dislikes`    | 0.01721183    |
+| `Comments`    | -0.03830608   |
+| `Followers`   | -0.1277357    |
+| `Gross`       | -0.1914479    |
+
+- Box-Cox dönüşümünden sonra, değişkenlerin çarpıklık değerleri belirgin bir şekilde azalmış ve çoğunlukla **0 civarına yaklaşmıştır**.
+- **`Budget`**, **`Dislikes`**, **`Comments`**, ve **`Likes`** gibi değişkenler neredeyse tamamen simetrik bir dağılıma sahip hale gelmiştir (çarpıklık 0'a çok yakın).
+- Çarpıklık değerlerinde negatif veya pozitif sapma gösteren değişkenler bile (**`Screens`** ve **`Ratings`** gibi), dönüşüm sonrası daha simetrik bir dağılıma yaklaşmıştır.
+- **`Gross`**, hedef değişken olarak, dönüşümden sonra -0.1914479 çarpıklık değeri ile daha dengeli bir dağılıma sahip olmuştur.
+- Bu sonuçlar, modelleme için daha iyi bir veri yapısı sağlamış ve ekstrem değerlerin etkisini azaltmıştır.
+
+### Box-Cox Dönüşümü Sonrası Korelasyon ve Dağılım Analizi
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(GGally)
+library(ggplot2)
+
+# Korelasyon katsayısını gösteren ve pasta grafiği oluşturan özel fonksiyon
+pie_cor <- function(data, mapping, ...) {
+  # İlgili iki değişkenin adını al
+  x <- eval_data_col(data, mapping$x)
+  y <- eval_data_col(data, mapping$y)
+  
+  # Korelasyon hesapla
+  cor_value <- round(cor(x, y, use = "complete.obs"), 2)
+  
+  # Pasta grafiği için veri hazırla (pozitif ve negatif korelasyon için iki parça)
+  pie_data <- data.frame(
+    category = c("Correlation", "Remaining"),
+    value = c(abs(cor_value), 1 - abs(cor_value))
+  )
+  
+  # Özel renk paleti: -1 kırmızı, 0 mor, +1 mavi
+  color_palette <- colorRampPalette(c("red", "purple", "blue"))(100)
+  cor_color <- color_palette[round((cor_value + 1) * 50)]
+  
+  # Korelasyon pozitif mi negatif mi?
+  cor_fill_color <- ifelse(cor_value >= 0, "skyblue", "red")
+  
+  # Pasta grafiği oluştur
+  ggplot(pie_data, aes(x = "", y = value, fill = category)) +
+    geom_bar(stat = "identity", width = 1, color = "white") +
+    coord_polar("y") +
+    # Korelasyon katsayısını siyah çerçeveli renkli metinle göster
+    geom_text(aes(label = ifelse(category == "Correlation", cor_value, "")), 
+              x = 1, y = 0.5, size = 5, color = cor_color, fontface = "bold") +
+    scale_fill_manual(values = c("Correlation" = cor_fill_color, "Remaining" = "grey80")) +
+    theme_void() +
+    theme(legend.position = "none")
+}
+
+# Binwidth hesaplayan fonksiyon
+calculate_binwidth <- function(column) {
+  column <- column[!is.na(column)]  # NA değerleri çıkar
+  if (length(column) <= 1) {
+    return(1)  # Varsayılan değer
+  }
+  bins <- ceiling(log2(length(column)) + 1)
+  binwidth <- (max(column) - min(column)) / bins
+  if (binwidth == 0 || is.nan(binwidth) || is.infinite(binwidth)) {
+    return(1)
+  }
+  return(binwidth)
+}
+
+# Özel histogram fonksiyonu
+custom_hist <- function(data, mapping, ...) {
+  x <- eval_data_col(data, mapping$x)
+  ggplot(data, mapping) +
+    geom_histogram(binwidth = calculate_binwidth(x), fill = "lightblue", color = "darkblue", ...) +
+    theme_minimal()
+}
+
+# ggpairs ile korelasyon matrisi oluşturma
+ggpairs(
+  numerical_data,
+  upper = list(continuous = wrap(pie_cor)),  # Üst üçgende özel pasta grafikli korelasyon
+  lower = list(continuous = wrap("points", color = "blue", alpha = 0.6)),  # Alt üçgende scatter plot mavi
+  diag = list(continuous = wrap(custom_hist))  # Diyagonal için özel histogram
+)
+```
+
+
+### Box-Cox Dönüşümü Sonrası Korelasyon ve Dağılım Analizi
+
+#### `Gross` (Hedef Değişken) ve Diğer Değişkenlerle İlişkiler
+- **`Budget` ve `Gross`** arasındaki korelasyon (**0.73**) en güçlü ilişki olarak öne çıkmaktadır. Bu, yüksek bütçeli filmlerin genellikle daha yüksek hasılat elde ettiğini göstermektedir. Bütçe, hasılatı tahmin etmek için en kritik değişkenlerden biridir.
+- **`Screens` ve `Gross`** arasındaki korelasyon (**0.35**) orta seviyededir. Daha fazla ekranda gösterime giren filmlerin daha fazla izlenme ve dolayısıyla daha fazla hasılat elde etmesi beklenebilir.
+- **`Views` ve `Gross`** arasında anlamlı bir ilişki (**0.24**) bulunmaktadır. İzlenme sayısı arttıkça hasılatta bir artış eğilimi gözlemlenmektedir, ancak bu ilişki bütçe veya ekran sayısı kadar güçlü değildir.
+- **`Likes` ve `Gross`** arasındaki pozitif korelasyon (**0.25**) sosyal medya etkileşimlerinin hasılat üzerinde bir miktar etkili olduğunu göstermektedir.
+- **`Followers` ve `Gross`** arasındaki düşük pozitif korelasyon (**0.31**) daha geniş bir takipçi kitlesine sahip filmlerin hasılat avantajı olabileceğini düşündürmektedir.
+- **`Sentiment` ve `Gross`** arasındaki korelasyon (**0.09**) oldukça zayıftır. Sosyal medya duyarlılığının hasılat üzerindeki etkisinin sınırlı olduğu söylenebilir.
+
+#### Diğer Değişkenlerle İlişkiler ve Sosyal Medya Faktörleri
+- Sosyal medya etkileşim değişkenleri (`Likes`, `Views`, `Dislikes`, `Comments`), birbirleriyle yüksek korelasyonlar göstermektedir. Örneğin:
+  - **`Likes` ve `Views`** arasında **0.94** gibi güçlü bir ilişki bulunmaktadır. Popüler filmler, izlenme ve beğenme sayılarında paralel artış göstermektedir.
+  - **`Comments` ve `Dislikes`** arasındaki korelasyon (**0.84**) tartışmalı veya ilgi çeken içeriklerin daha fazla yorum ve olumsuz tepki aldığını ortaya koymaktadır.
+- Ancak bu sosyal medya faktörlerinin `Gross` üzerindeki etkileri, diğer değişkenlere kıyasla daha sınırlı kalmaktadır.
+
+#### Dağılımlar ve Yorumlar
+- Box-Cox dönüşümü sonrası `Gross` değişkeni daha dengeli bir dağılıma sahiptir. Bu, modelleme performansını artırabilir ve uç değerlerin etkisini azaltabilir.
+- `Gross` değişkeninin `Budget` ve `Screens` ile olan ilişkisi doğrusal bir yapıya sahiptir. Scatter plot'larda daha fazla bütçe veya ekran sayısının hasılat üzerinde doğrudan etkisi olduğu gözlemlenmiştir.
+- Sosyal medya etkileşimleri (`Likes`, `Views`, `Comments`, `Dislikes`), hasılat üzerinde daha dolaylı etkiler gösterebilir. Bu değişkenlerin birlikte artışı `Gross`'a katkı sağlayabilir, ancak ana belirleyici faktörler değildir.
+
+#### Genel Değerlendirme
+- `Gross`, güçlü bir şekilde `Budget` ve daha düşük ölçüde `Screens` ile ilişkilidir. Bu iki değişken, hasılatı tahmin etmek için temel bileşenlerdir.
+- Sosyal medya etkileşimleri (ör. `Likes`, `Views`) arasında güçlü ilişkiler olsa da, `Gross` üzerindeki etkileri sınırlıdır ve dolaylı bir katkı sağlayabilir.
+- `Sentiment` değişkeni, düşük korelasyonu nedeniyle hasılat tahmini için kritik bir faktör değildir.
+
+
+
+## Kategorik Değişkenler
+
+### Kategorik Değişkenlerin Frekans Analizi
+
+```{r echo=FALSE}
+# Sadece seçilen sütunları al ve uzun forma dönüştür
+categorical_data <- pivot_longer(
+  boxcox_data[, c("Year", "SequelBased", "Genre")],  # "Year", "SequelBased", "Genre" sütunlarını seç
+  cols = everything(),                        # Tüm sütunları uzun forma dönüştür
+  names_to = "Variable",                      # Sütun isimlerini "Variable" kolonuna taşı
+  values_to = "Category"                      # Değerleri "Category" kolonuna taşı
+)
+
+# Frekans plotlarını tek bir grafikte çizdirin
+ggplot(categorical_data, aes(x = Category)) +
+  geom_bar(fill = "skyblue", color = "darkblue") +
+  facet_wrap(~Variable, scales = "free_x") + # Her kategorik değişken için ayrı panel
+  theme_minimal() +
+  labs(title = "Frequency Plots of Categorical Variables",
+       x = "Categories",
+       y = "Frequency") +
+  scale_y_continuous(breaks = seq(0, 200, by = 10))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+#### `Genre` (Film Türü)
+- `Genre` değişkeninde belirli kategorilerin diğerlerine göre daha fazla gözleme sahip olduğu görülmektedir.
+- Özellikle **1**, **3**, ve **8** numaralı kategoriler, diğer türlere göre daha sık gözlemlenmiştir. 
+- En düşük frekansa sahip üç `Genre` kategorisi olan **4**, **7**, ve **6**, sırasıyla **1**, **2**, ve **3** gözleme sahiptir. Bu kategoriler, veri setindeki dengesizliği azaltmak için veri setinden çıkarılmıştır.
+
+#### `SequelBased` (Devam Filmi)
+- Filmlerin büyük bir çoğunluğu **"Not Sequel Based"** kategorisine aittir. **"Sequel Based"** kategorisi ise çok daha düşük bir frekansa sahiptir.
+- Bu, veri setindeki filmlerin önemli bir kısmının bir serinin parçası olmadığını, tekil filmler olduğunu göstermektedir. 
+
+#### `Year` (Yayın Yılı)
+- Veri setinde **2014** yılına ait filmler, **2015** yılına kıyasla daha fazla temsil edilmektedir.
+- Bu fark, veri setinin örnekleme yapısına bağlı olabilir. İki yıl arasındaki dağılım dengeli değildir, ancak her iki yılın veri setinde anlamlı bir şekilde temsil edildiği söylenebilir.
+
+#### Genel Değerlendirme
+- `Genre` değişkenindeki dengesiz dağılım, belirli türlerin model performansı üzerindeki etkisini incelemek için önemlidir. 
+- `SequelBased` değişkenindeki dengesizlik, devam filmlerinin performans analizinde özel bir kategori olarak ele alınabileceğini göstermektedir.
+- `Year` değişkeninin dengesiz dağılımı, iki yıl arasındaki farkların tahmin modellerine etkisini analiz etmeyi gerektirebilir.
+- Her üç kategorik değişkende de en yüksek frekansa sahip kategoriler (**`Genre` = 1, `SequelBased` = Not Sequel Based, `Year` = 2014**) referans noktası olarak seçilmiştir.
+
+
+```{r include=FALSE}
+# Genre değişkenindeki kategorilerin frekansını hesapla
+genre_frequencies <- table(boxcox_data$Genre)
+
+# Frekanslara göre sırala ve en düşük 3 kategoriyi seç
+lowest_genres <- sort(genre_frequencies)[1:3]
+# Sonuçları yazdır
+cat("En düşük frekansa sahip 3 Genre kategorisi:\n")
+print(lowest_genres)
+
+boxcox_data <- boxcox_data[!boxcox_data$Genre %in% c("4", "7", "6"), ]
+data <- data[!data$Genre %in% c("4", "7", "6"), ]
+
+summary(boxcox_data)
+```
+
+
+```{r include=FALSE}
+data$Year <- relevel(data$Year, ref = "2014")
+data$SequelBased <- factor(data$SequelBased, levels = c("Not Sequel Based", "Sequel Based"))
+data$Genre <- relevel(data$Genre, ref = "1")
+
+
+boxcox_data$Year <- relevel(boxcox_data$Year, ref = "2014")
+boxcox_data$SequelBased <- factor(boxcox_data$SequelBased, levels = c("Not Sequel Based", "Sequel Based"))
+boxcox_data$Genre <- relevel(boxcox_data$Genre, ref = "1")
+```
+
+## Eksik Değer Doldurma İşlemi (MICE Kullanımı)
+
+Bu işlem, **MICE (Multivariate Imputation by Chained Equations)** yöntemi kullanılarak veri setindeki eksik değerlerin doldurulmasını amaçlamaktadır. MICE, eksik gözlemleri doldururken değişkenler arasındaki ilişkileri dikkate alır ve uygun yöntemlerle tahminler yapar.
+
+### İşlem Detayları
+- **Eksik Veri Doldurma Yöntemleri**:
+  - **`logreg`**: İkili kategorik değişkenler için kullanılmıştır (örneğin, devam filmi olup olmadığını belirten `SequelBased` değişkeni).
+  - **`pmm`**: Sayısal değişkenler için **Predictive Mean Matching** yöntemi seçilmiştir (örneğin, `Gross`, `Budget`).
+  - **`polyreg`**: Çok kategorili değişkenler için **polinomial regresyon** yöntemi kullanılmıştır (örneğin, `Genre`).
+- **İterasyon ve Tekrarlanabilirlik**:
+  - Maksimum 100 iterasyon yapılmış ve 10 farklı doldurulmuş veri seti üretilmiştir.
+  - Rastgele işlemlerin tutarlı sonuçlar üretmesi için bir seed değeri atanmıştır.
+
+- Bu veri seti, eksik gözlemleri tahmin ederek modelleme için kullanılabilir hale getirilmiştir.
+
+```{r include=FALSE}
+# Gerekli kütüphaneyi yükleyin
+library(mice)
+
+
+# MICE ile eksik değer doldurma işlemi
+imputed_data <- mice(
+  boxcox_data, 
+  method = c(
+    "logreg",   # Binary kategorik
+    "pmm",      # Sayısal
+    "polyreg",  # Çok kategorili
+    "pmm", "pmm", "pmm", "pmm", "pmm", 
+    "pmm", "pmm", "pmm", "logreg", "pmm"
+  ), 
+  maxit = 100,  # Maksimum iterasyon
+  m = 10,       # 10 farklı doldurulmuş veri seti
+  seed = 
+)
+
+# Eksik değerlerin doldurulduğu tamamlanmış veri setini al
+completed_data <- complete(imputed_data, 1)
+
+summary(completed_data)
+```
+## Ters Box-Cox Dönüşümü ve NA Değerlerinin Geri Yüklenmesi
+
+Eksik değerler, **ters Box-Cox dönüşümü** uygulanarak orijinal formata geri döndürülmüş ve veri setine eklenmiştir. `inverse_boxcox` fonksiyonu, dönüşüm sırasında `Dislikes` ve `Comments` değişkenlerine eklenen **1 değerini çıkararak** işlem yapmıştır. Eksik gözlemler, MICE ile tahmin edilen değerlerin ters Box-Cox dönüşümü sonrası doldurulmuştur.
+
+```{r include=FALSE}
+# Ters Box-Cox dönüşüm fonksiyonu (Dislikes ve Comments için 1 çıkarma dahil)
+inverse_boxcox <- function(x, lambda, var_name) {
+  if (lambda == 0) {
+    result <- exp(x)  # Lambda sıfırsa üstel dönüşüm
+  } else {
+    result <- ((x * lambda) + 1)^(1 / lambda)  # Lambda sıfırdan farklıysa ters dönüşüm
+  }
+  
+  # Dislikes ve Comments için 1 çıkarma
+  if (var_name %in% c("Dislikes", "Comments")) {
+    result <- result - 1
+  }
+  
+  return(result)
+}
+summary(data)
+# NA değerleri doldurma işlemi
+restored_data <- data  # Ham verinin bir kopyası
+for (var in variables_to_transform) {
+  # Sadece eksik değerleri doldur ve ters Box-Cox dönüşümünü uygula
+  restored_data[[var]][is.na(data[[var]])] <- 
+    inverse_boxcox(completed_data[[var]][is.na(data[[var]])], lambda_values[[var]], var)
+}
+
+# Sonuçları kontrol et
+summary(restored_data)
+data <- restored_data
+```
+## Veri Setini Train ve Test Olarak Bölme
+
+Veri seti, %70 eğitim (**train**) ve %30 test veri seti olacak şekilde rastgele bölünmüştür. **`set.seed()`**, sonuçların tekrarlanabilirliğini sağlamak için kullanılmıştır ve bu değer öğrenci numaranızı temsil etmektedir. Eğitim veri seti modelin öğrenmesi, test veri seti ise bağımsız doğrulama için ayrılmıştır.
+
+```{r include=FALSE}
+### TRAIN TEST BÖLME
+set.seed()
+
+# Split data into training and testing sets
+train_indices <- sample(seq_len(nrow(data)), size = 0.7 * nrow(data))
+
+# Create train and test datasets
+train_data <- data[train_indices, ]
+test_data <- data[-train_indices, ]
+```
+## Box-Cox Dönüşümü ve Lambda Hesaplama
+
+Bu işlemde, Box-Cox dönüşümü yalnızca **train verisi** üzerinde gerçekleştirilmiş, dönüşüm için hesaplanan **lambda değerleri** test verisine uygulanmıştır. 
+
+### İşlem Detayları
+- `Comments` ve `Dislikes` değişkenlerine 0 içeren değerler nedeniyle dönüşüm öncesi **1 eklenmiştir**.
+- Train verisi üzerinden her değişken için uygun **lambda** değeri hesaplanmış ve kaydedilmiştir.
+- Test verisine, yalnızca train verisinden elde edilen lambda değerleri kullanılarak dönüşüm uygulanmıştır. Bu sayede test verisi bağımsız kalmış ve **overfitting** riski azaltılmıştır.
+
+Sonuç olarak, her iki veri seti de dönüşüm sonrası modelleme için hazır hale getirilmiştir.
+
+```{r include=FALSE}
+## TRAIN TEST İÇİN BOXCOX
+
+# Comments ve Dislikes için +1 ekle (hem train hem test için)
+train_data$Comments <- train_data$Comments + 1
+test_data$Comments <- test_data$Comments + 1
+train_data$Dislikes <- train_data$Dislikes + 1
+test_data$Dislikes <- test_data$Dislikes + 1
+
+# Box-Cox dönüşümü yapılacak değişkenlerin isimleri
+variables_to_transform <- c("Budget", "Screens", "Views", "Likes", "Dislikes", "Comments", "Followers", "Gross")
+
+# Lambda değerlerini saklamak için boş bir liste
+lambda_values <- list()
+
+# Train verisi üzerinde Box-Cox dönüşümü ve lambda hesaplama
+for (col_name in variables_to_transform) {
+  if (col_name %in% names(train_data)) {
+    # Train seti üzerinde lineer model oluşturma
+    model <- lm(as.formula(paste0(col_name, " ~ 1")), data = train_data)
+    
+    # En uygun lambda değerini bulma
+    lambda <- boxcox(model, lambda = seq(-2, 2, 0.1))$x[which.max(boxcox(model, lambda = seq(-2, 2, 0.1))$y)]
+    
+    # Lambda değerini kaydet
+    lambda_values[[col_name]] <- lambda
+    
+    # Train setine Box-Cox dönüşümünü uygulama
+    train_data[[col_name]] <- (train_data[[col_name]]^lambda - 1) / lambda
+  }
+}
+
+# Test verisine Box-Cox dönüşümü (train'den öğrenilen lambda ile)
+for (col_name in variables_to_transform) {
+  if (col_name %in% names(test_data) && !is.null(lambda_values[[col_name]])) {
+    lambda <- lambda_values[[col_name]]
+    
+    # Test setine Box-Cox dönüşümünü uygulama
+    test_data[[col_name]] <- (test_data[[col_name]]^lambda - 1) / lambda
+  }
+}
+
+# Sonuçları kontrol et
+summary(train_data)
+summary(test_data)
+```
+## Hiyerarşik Kümeleme ve Silhouette Analizi
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(cluster)
+
+# Train verisi ile Gower mesafesi ve hiyerarşik kümeleme
+train_no_genre <- train_data[, !colnames(train_data) %in% "Genre"]
+gower_dist_train <- daisy(train_no_genre, metric = "gower")
+hc_train <- hclust(as.dist(gower_dist_train), method = "ward.D2")
+
+# Dendrogram görselleştirme
+library(factoextra)
+fviz_dend(hc_train, 
+          main = "Hiyerarşik Kümeleme Dendrogramı", 
+          xlab = "", 
+          sub = "", 
+          rect = TRUE,  # Kümeleri dikdörtgenlerle vurgula
+          k = 3        # Kümelerin sayısını belirt
+)
+```
+```{r include=FALSE}
+# Test verisi için Gower mesafesi
+test_no_genre <- test_data[, !colnames(test_data) %in% "Genre"]
+gower_dist_test <- daisy(test_no_genre, metric = "gower")
+
+# Train kümeleri belirle
+clusters_train <- cutree(hc_train, k = 3)
+
+# Silhouette genişliklerini hesapla
+silhouette_train <- silhouette(clusters_train, dist(as.matrix(gower_dist_train)))
+
+# Her kümenin ortalama silhouette genişliğini hesapla ve yazdır
+aggregate_result <- aggregate(silhouette_train[, 3], 
+                              list(Cluster = clusters_train), mean)
+cat("Cluster-wise Silhouette Widths:\n")
+print(aggregate_result)
+
+# Genel ortalama silhouette genişliğini yazdır
+cat("Average Silhouette Width:",
+    mean(silhouette_train[, 3]), "\n")
+```
+
+### İşlem Detayları
+1. **Gower Mesafesi**:
+   - **Train** ve **Test** veri setlerinde **Genre** değişkeni hariç tutularak Gower mesafesi hesaplanmıştır. Bu metrik, kategorik ve sayısal değişkenlerin birlikte değerlendirilmesini sağlar.
+
+2. **Hiyerarşik Kümeleme**:
+   - **Train verisi** üzerinde **Ward.D2 yöntemi** kullanılarak hiyerarşik kümeleme yapılmıştır.
+   - Kümelerin görselleştirilmesi için dendrogram çizilmiş ve `k = 3` (3 küme) seçilmiştir. Raporun kısa olması adına çıktı gizlenmiştir.
+
+3. **Silhouette Analizi**:
+   - Genel ortalama silhouette genişliği: **0.294** olarak bulunmuştur.
+
+#### Sonuç
+- **k = 3** ile en yüksek silhouette genişliği elde edilmiştir, ancak bu değer oldukça küçüktür. Bu, kümelerin birbirinden net bir şekilde ayrılmadığını ve veri setindeki heterojen yapının yüksek olduğunu göstermektedir.
+- Sonuç olarak, veride herhangi bir değişiklik yapılmamıştır ve **Genre** değişkeni modelleme sürecinde olduğu gibi bırakılmıştır.
+
+# Lineer Regresyon Modelleri
+
+## FAMD (Factor Analysis for Mixed Data) Analizi
+```{r include=FALSE}
+library(FactoMineR)
+library(factoextra)
+
+# FAMD Analizi
+famd_train <- FAMD(train_data[, !colnames(train_data) %in% "Gross"], ncp = 15) # ncp: analiz edilecek bileşen sayısı
+
+# Scree Plot: Eigenvalue'lara dayalı
+fviz_eig(famd_train, 
+         addlabels = TRUE,        # Çubukların üzerinde değerleri göster
+         ylim = c(0, 25),         # Y eksenini ayarla (isteğe bağlı)
+         barfill = "skyblue",     # Çubuk rengi
+         barcolor = "darkblue",   # Çubuk kenar rengi
+         linecolor = "red",       # Çizgi rengi
+         ncp = 15)
+        
+# Eigenvalue'ları ve toplam varyans açıklamasını kontrol etme
+print(famd_train$eig)
+
+famd_train <- FAMD(train_data[, !colnames(train_data) %in% "Gross"], ncp = 9) # ncp: analiz edilecek bileşen sayısı
+
+
+
+
+library(corrplot)
+
+cos2_matrix <- famd_train$var$cos2
+color_palette <- colorRampPalette(c("blue", "lightblue", "orange", "red"))(200)
+
+
+# Sayısal değişkenlerin koordinatlarını kontrol etme
+print(famd_train$var$coord)
+
+# Kategorik değişkenlerin koordinatlarını kontrol etme
+print(famd_train$quali.var$coord)
+
+# FAMD sonucunda train verisi için yeni dimension değerlerini alma
+train_new_dimensions <- as.data.frame(famd_train$ind$coord)
+
+# FAMD sonucundan elde edilen koordinatları veri çerçevesine dönüştürme
+famd_dimensions <- as.data.frame(famd_train$ind$coord)
+
+# Sütun isimlerini anlamlı hale getirme (örn. "Dim.1", "Dim.2", ...)
+colnames(famd_dimensions) <- paste0("Dim", seq_len(ncol(famd_dimensions)))
+
+# FAMD koordinatlarını, train verisindeki hedef değişken (Gross) ile birleştirme
+train_with_famd <- cbind(Gross = train_data$Gross, famd_dimensions)
+```
+
+```{r echo=FALSE}
+# Corrplot ile görselleştirme
+corrplot(
+  cos2_matrix,
+  is.corr = FALSE,             # cos2 değerleri korelasyon değil, bu nedenle FALSE
+  tl.col = "black",            # Etiket rengi siyah
+  tl.srt = 45,                 # Etiketleri 45 derece döndür
+  cl.pos = "r",                # Renk skalası sağda
+  col = color_palette,         # Yeni renk paleti
+  title = "Quality of Representation (cos2) for Variables",
+  mar = c(0, 0, 2, 0)          # Başlık için üst boşluk
+)
+```
+FAMD (Factor Analysis for Mixed Data) analizi, hem sayısal hem de kategorik değişkenlerin varyansını açıklamak amacıyla uygulanmış ve toplam varyansın %75'inin açıklandığı 9 bileşen seçilmiştir. 9. bileşen, özvektör değeri **0.89** ile en düşük özvektöre sahip bileşen olarak katkıda bulunmuştur. 
+
+Yukarıdaki görsel, değişkenlerin her bir boyut üzerindeki cos² değerlerini göstermektedir. `Views`, `Likes`, `Dislikes` ve `Comments` değişkenlerinin büyük ölçüde **Dim.1** tarafından açıklandığı, `Genre` ve `SequelBased` gibi kategorik değişkenlerin ise diğer boyutlar tarafından açıklanmaya daha yatkın olduğu görülmektedir. 
+
+```{r include=FALSE}
+# lm modeli: Gross'u FAMD boyutlarıyla tahmin et
+model1 <- lm(Gross ~ ., data = train_with_famd)
+
+# Modelin özetini kontrol et
+summary(model1)
+
+library(olsrr)
+library(ISLR)
+
+
+a1=ols_step_all_possible(model1)
+View(a1$result)
+summary(lm(Gross ~ ., data = train_with_famd[,c("Dim1", "Dim2", "Dim3", "Dim4", "Dim5", "Dim7", "Gross")]))
+summary(lm(Gross ~ ., data = train_with_famd[,c("Dim1", "Dim2", "Dim3", "Dim4", "Dim5", "Gross")]))
+```
+FAMD ile geliştirilen model, diğer veri ön işleme süreçleriyle hazırlanan verilere kıyasla daha düşük performans metrikleri göstermiştir. Bu nedenle, FAMD modeli final modelleri arasında yer almamıştır. İlgili kodlar ve elde edilen sonuçlar, analiz sürecinin şeffaflığı için RMarkdown dokümanına dahil edilmiştir.
+
+## PCA (Principal Component Analysis)
+
+```{r include=FALSE}
+# PCA için sadece "Views", "Likes", "Dislikes", "Comments" değişkenlerini seçiyoruz
+pca_result <- prcomp(train_data[, c("Views", "Likes", "Dislikes", "Comments")],)
+summary(pca_result)
+```
+Views, Likes, Dislikes ve Comments bağımsız değişkenlerinin **Quality of Representation cos2 for Variables** grafiğinde 1. bileşende çok yüksek cos² değerlerine sahip olması ve bu değişkenlerin kendi aralarında yüksek korelasyona sahip olması, boyut indirgeme için temel oluşturmuştur. Geliştirilecek lineer regresyon modelinin **multikolinerite sorunundan kaçınması** adına, bu dört değişken tek bir bileşenle temsil edilmiştir. Geri kalan bağımsız değişkenler ise boyut indirgemeden veri setinde tutulmuştur.
+
+Boyut indirgeme işlemi, yalnızca **train verisi** üzerinde gerçekleştirilmiş, elde edilen PCA modeli test verisinde de aynı bileşenle **predict** edilerek uygulanmıştır. **1. bileşen**, bu dört değişkenin toplam varyansının %99.53'ünü açıklamaktadır. Oluşturulan bileşenin bu dört değişken ile ters yönlü olduğu görülmektedir; yani, Views, Likes, Dislikes ve Comments değerleri arttıkça bileşen değeri düşmektedir.
+
+
+```{r include=FALSE}
+train_pca_data <- train_data
+train_pca_data$Interaction_Score <-   pca_result$x[, 1]
+train_pca_data <- train_pca_data[, !(colnames(train_pca_data) %in% c("Views", "Likes", "Dislikes", "Comments"))]
+head(train_pca_data)
+
+test_pca_data <- test_data
+test_pca_data$Interaction_Score <- predict(pca_result, newdata = test_data[, c("Views", "Likes", "Dislikes", "Comments")])[, 1]
+test_pca_data <- test_pca_data[, !(colnames(test_pca_data) %in% c("Views", "Likes", "Dislikes", "Comments"))]
+
+# Test veri setinin özetini yazdır
+summary(test_pca_data)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Train ve test verisini birleştir
+combined_data <- rbind(
+  cbind(train_pca_data, Dataset = "Train"),
+  cbind(test_pca_data, Dataset = "Test")
+)
+combined_data <- combined_data[, c(setdiff(names(combined_data), "Gross"), "Gross")]
+
+# Sadece sayısal değişkenleri seç
+numeric_combined_data <- combined_data[, sapply(combined_data, is.numeric)]
+
+# ggpairs ile train ve test verisinin bir arada görselleştirilmesi
+ggpairs(
+  numeric_combined_data,
+  upper = list(continuous = wrap(pie_cor)),  # Üst üçgende pasta grafikli korelasyon
+  lower = list(continuous = wrap("points", color = "blue", alpha = 0.6)),  # Alt üçgende scatter plot
+  diag = list(continuous = wrap(custom_hist))  # Diyagonal histogramlar
+)
+```
+Ham veride elde edilen görselde, **Views**, **Likes**, **Dislikes**, ve **Comments** değişkenleri arasındaki yüksek korelasyonlar, PCA sonrası **Interaction_Score** ile temsil edilmiştir. Örneğin:
+- **Followers - Views**: 0.27, **Followers - Likes**: 0.30.
+- **Gross - Views**: 0.26, **Gross - Likes**: 0.28.
+
+Bu görselde, aynı ilişkiler PCA ile oluşturulan **Interaction_Score** için benzer şekilde korunmuştur:
+- **Followers - Interaction_Score**: -0.01.
+- **Gross - Interaction_Score**: -0.29.
+
+Bu değerler, PCA işleminin **Views**, **Likes**, **Dislikes**, ve **Comments** değişkenleri arasındaki ilişkileri tek bir boyutta etkili şekilde özetlediğini ve diğer değişkenlerle olan ilişkilerde büyük bir değişiklik yaratmadığını göstermektedir. Özetle, boyut indirgeme işlemi, hem bilgi kaybını minimize etmiş hem de korelasyon yapısını büyük ölçüde korumuştur.
+
+## PCA ile Olan Veride Model Geliştirme
+
+
+```{r include=FALSE}
+model2 <- lm(Gross ~ ., data = train_pca_data)
+#summary(model2)
+a2=ols_step_all_possible(model2)
+View(a2$result)
+#summary(lm(Gross ~ ., data = train_pca_data[,c("Ratings", "Budget", "Screens", "Followers","SequelBased", "Interaction_Score", "Gross")]))
+final1 <- lm(Gross ~ ., data = train_pca_data[,c("Ratings", "Budget", "Screens", "SequelBased", "Interaction_Score", "Gross")])
+summary(final1)
+ols_press(final1)
+```
+**All Possible Subsets Regression** ile elde edilen tüm olası modellerden, **Cp değeri en düşük olan model** (9.592047) seçilmiştir. Cp değerinin **5 olan ideal değerden uzak olması**, modelin aşırı karmaşık olabileceğini ve bazı durumlarda overfitting riski taşıyabileceğini göstermektedir. Bu, modelin yeni verilere genelleme yapma kapasitesini sınırlayabilir. Ayrıca, Cp'nin yüksek olması, modelin hedef değişkeni açıklama açısından yeterince parsimonious olmadığını (gereksiz değişkenler içerdiğini) gösterebilir. 
+
+### Modelin Yapısı
+Model formülü:
+\[
+Gross = \beta_0 + \beta_1 \cdot Ratings + \beta_2 \cdot Budget + \beta_3 \cdot Screens + \beta_4 \cdot SequelBased + \beta_5 \cdot Interaction\_Score + \epsilon
+\]
+
+- **Sabit Terim (\( \beta_0 \))**: Modelin diğer değişkenlerinin etkisi sıfır olduğunda, `Gross` değişkeninin tahmini değeri **-171.67**'dir. Bu, hiç `Ratings` almayan, hiçbir `Budget` harcanmayan, hiçbir `Screens`'de gösterilmeyen ve hiçbir `Interaction_Score`'a sahip olmayan bir filmin yaklaşık **171.67 birim zarar** edeceğini ifade eder.
+- **Ratings** (\( \beta_1 \)): `Ratings` değişkenindeki her bir birimlik artış, `Gross` değerinde yaklaşık **29.95** birimlik bir artışa neden olmaktadır (**p < 0.001**).
+- **Budget** (\( \beta_2 \)): `Budget` değişkenindeki her bir birimlik artış, `Gross` değerinde yaklaşık **1.78** birimlik bir artışa neden olmaktadır (**p < 0.001**).
+- **Screens** (\( \beta_3 \)): `Screens` değişkenindeki her bir birimlik artış, `Gross` değerinde yaklaşık **1.12** birimlik bir artışa neden olmaktadır (**p < 0.001**).
+- **SequelBased (Kategori: Sequel Based)** (\( \beta_4 \)): `SequelBased` değişkeninin **"Sequel Based"** kategorisinde olması, `Gross` değerinde yaklaşık **70.79** birimlik bir artış yaratmaktadır (**p < 0.001**).
+- **Interaction_Score** (\( \beta_5 \)): `Interaction_Score`, Views, Likes, Dislikes ve Comments değişkenlerinden oluşturulan bir bileşen olup, bu dört değişkenle ters yönlü bir ilişkiye sahiptir. Bu nedenle, `Interaction_Score`'daki her bir birimlik artış, bu dört değişkenin toplam değerlerinin azalmasına karşılık gelir. Modeldeki negatif katsayı (**-0.19**) da bu etkiyi yansıtmaktadır; `Interaction_Score` arttıkça, `Gross` değerinde **-0.19** birimlik bir düşüş gözlemlenmektedir (**p = 0.084**, yalnızca %90 güven düzeyinde anlamlıdır). Bu, negatif kaysayıya filmin etkileşim puanı düştüğünde (Interaction_Score arttığında) gişe hasılatının azalacağını göstermektedir.
+
+### İstatistiksel Değerlendirme
+- **Null Hipotez (\( H_0 \))**: Her bir değişkenin katsayısının sıfır olduğu (değişkenin `Gross` üzerinde anlamlı bir etkisi olmadığı) varsayılmıştır.
+- **Alternatif Hipotez (\( H_1 \))**: Değişkenin `Gross` üzerindeki etkisinin sıfır olmadığı varsayılmıştır.
+- Tüm değişkenler için p-değerleri incelenmiştir:
+  - **Ratings**, **Budget**, **Screens**, ve **SequelBased** değişkenleri, **0.001** güven aralığında anlamlıdır (p < 0.001).
+  - **Interaction_Score**, yalnızca **%90 anlamlılık düzeyinde anlamlıdır** (p < 0.1).
+  
+### Model Performansı
+- **R-squared**: Model, toplam varyansın yaklaşık **%69.91**'ini açıklamaktadır.
+- **Adjusted R-squared**: Modelin açıklayıcılığı, karmaşıklık dikkate alındığında **%68.91** olarak hesaplanmıştır.
+- **Residual Standard Error (RSE)**: Artık hata değerlerinin standart sapması **87.65** birimdir.
+- **F-Statistic**: Modeldeki tüm değişkenlerin bir arada anlamlı olduğu kabul edilmektedir (**p < 2.2e-16**).
+- **PRESS Value**: Modelin train verisindeki **PRESS değeri 1,254,016**'dır.
+
+### Sonuç
+- Model, hedef değişken (`Gross`) üzerinde anlamlı bir açıklayıcılığa sahiptir.
+- **R-squared** ve **Adjusted R-squared** değerlerinin birbirine yakın olması (%69.91 ve %68.91), modelin gereksiz değişkenler içermediğini ve genel olarak tutarlı bir yapıya sahip olduğunu göstermektedir.
+- **Interaction_Score** değişkeni %90 anlamlılık düzeyinde anlamlı bulunmuştur, bu da model üzerindeki etkisinin görece sınırlı olabileceğini göstermektedir.
+- **Ratings**, **Budget**, **Screens**, ve **SequelBased** değişkenleri için \( H_0 \) reddedilmiştir, bu değişkenlerin `Gross` üzerinde anlamlı etkileri bulunmaktadır (**p < 0.001**). **Interaction_Score**, yalnızca %90 güven düzeyinde anlamlıdır ve daha yüksek güven düzeylerinde (\( p = 0.084 \)) \( H_0 \) reddedilememektedir.
+- F-istatistiği (\( p < 2.2 \times 10^{-16} \)) tüm değişkenlerin bir arada model için anlamlı olduğunu göstermektedir. Bu nedenle, **tüm katsayıların sıfır olduğu** yönündeki null hipotez (\( H_0 \)) reddedilmiştir. 
+
+```{r}
+confint(final1, level = 0.95)
+```
+
+```{r include=FALSE}
+test_pca_data$Predicted_Gross <- predict(final1, newdata = test_pca_data[, c("Ratings", "Budget", "Screens", "SequelBased", "Interaction_Score")])
+library(caret)
+library(Metrics)
+# Gerçek ve tahmin edilen değerleri alın
+actual <- test_pca_data$Gross
+predicted <- test_pca_data$Predicted_Gross
+
+# RMSE ve MAE için caret fonksiyonlarını kullan
+rmse_value <- RMSE(predicted, actual)
+mae_value <- MAE(predicted, actual)
+
+# R² ve Adjusted R² hesaplama
+r2_value <- R2(predicted, actual)  # caret R²
+n <- length(actual)               # Test gözlem sayısı
+p <- length(final1$coefficients) - 1  # Tahminci sayısı (intercept hariç)
+adj_r2_value <- 1 - ((1 - r2_value) * (n - 1) / (n - p - 1))
+
+# Sonuçları yazdır
+cat("Final 1 RMSE:", rmse_value, "\n")
+cat("Final 1 MAE:", mae_value, "\n")
+cat("Final 1 R²:", r2_value, "\n")
+cat("Final 1 Adjusted R²:", adj_r2_value, "\n")
+```
+### Test Verisi Performansı
+- **RMSE**: Modelin test verisindeki hata kareleri ortalama kökü **86.93** birimdir.
+- **MAE**: Ortalama mutlak hata **71.80** birim olarak hesaplanmıştır.
+- **R-squared**: Model, test verisindeki toplam varyansın **%72.64**'ünü açıklamaktadır.
+- **Adjusted R-squared**: Karmaşıklık dikkate alındığında açıklanan varyans oranı **%70.43**'tür.
+
+
+## Ham Veri ile Lineer Regresyon
+```{r include=FALSE}
+model3 <- lm(Gross ~ ., data = train_data)
+a3=ols_step_all_possible(model3)
+View(a3$result)
+
+
+#summary(lm(Gross ~ ., data = train_data[,c("Ratings", "Budget", "Screens", "Views", "Likes", "Dislikes", "Followers", "SequelBased", "Gross")]))
+final2 <- lm(Gross ~ ., data = train_data[,c("Ratings", "Budget", "Screens", "Views", "Likes", "Dislikes", "SequelBased", "Gross")])
+summary(final2)
+ols_press(final2)
+
+```
+
+
+Ham veriden oluşturulan lineer regresyon modeli, **All Possible Subsets Regression** yöntemiyle seçilmiştir. Seçilen modelde **Cp değeri 10.94** ve **parametre sayısı 7**'dir. Modelin artık hata standart sapması **85.48**, açıklanan varyans oranı **%71.76 (R-squared)** ve karmaşıklık dikkate alındığında açıklanan varyans oranı **%70.43 (Adjusted R-squared)** olarak hesaplanmıştır. Modelin  **PRESS değeri 1,215,558**'dır.
+
+Değişkenlerden **Ratings**, **Budget**, **Screens**, ve **SequelBased** %0.1 güven düzeyinde (**p < 0.001**) anlamlı bulunurken, **Views**, **Likes**, ve **Dislikes** daha düşük düzeylerde anlamlılık göstermiştir. Modelin genelde anlamlı olduğu (F-statistic: **54.08**, p-value: **< 2.2e-16**) görülmüştür ve model, hedef değişken olan `Gross` üzerindeki etkileri yorumlamak için uygun bir yapıya sahiptir.
+
+```{r include=FALSE}
+# Test setindeki tahminleri yap
+test_data$Predicted_Gross <- predict(final2, newdata = test_data[, c("Ratings", "Budget", "Screens", "Views", "Likes", "Dislikes", "SequelBased")])
+
+# Gerçek ve tahmin edilen değerleri alın
+actual <- test_data$Gross
+predicted <- test_data$Predicted_Gross
+
+# RMSE ve MAE için caret fonksiyonlarını kullan
+rmse_value <- RMSE(predicted, actual)
+mae_value <- MAE(predicted, actual)
+
+# R² ve Adjusted R² hesaplama
+r2_value <- R2(predicted, actual)  # caret R²
+n <- length(actual)               # Test gözlem sayısı
+p <- length(final2$coefficients) - 1  # Tahminci sayısı (intercept hariç)
+adj_r2_value <- 1 - ((1 - r2_value) * (n - 1) / (n - p - 1))
+
+# Sonuçları yazdır
+cat("RMSE:", rmse_value, "\n")
+cat("MAE:", mae_value, "\n")
+cat("R²:", r2_value, "\n")
+cat("Adjusted R²:", adj_r2_value, "\n")
+```
+### Test Verisi Performansı
+- **RMSE**: Modelin test verisindeki hata kareleri ortalama kökü **87.68** birimdir.
+- **MAE**: Ortalama mutlak hata **71.33** birim olarak hesaplanmıştır.
+- **R-squared**: Model, test verisindeki toplam varyansın **%72.30**'unu açıklamaktadır.
+- **Adjusted R-squared**: Karmaşıklık dikkate alındığında açıklanan varyans oranı **%69.07**'dir.
+
+PCA kullanılan veriye göre benzer metrikler elde edilmiştir. Ancak, **Likes** ve **Dislikes** değişkenleri arasındaki yüksek korelasyonun aynı modelde bulunmasının multikolineriteye sebep olma ihtimali göz önünde bulundurulmuştur. Bu nedenle, ham verili model yerine, multikolineriteyi azaltmak için PCA uygulanmış verili model tercih edilmiştir.
+
+# Final Modeli
+```{r echo=FALSE}
+par(mfrow=c(2,2))
+plot(final1)
+par(mfrow=c(1,1))
+```
+
+### Artık Analizi
+- **Residuals vs Fitted**: Artıklar, tahmin edilen değerler (fitted values) etrafında rastgele bir şekilde 0 çevresine dağılmıştır. Bu, modelde hata terimlerinin bağımsız ve sabit bir varyansa (homoskedastisite) sahip olduğunu göstermektedir.
+- **Q-Q Residuals**: Standartlaştırılmış artıkların teorik kuantillere yakın bir çizgi üzerinde yer alması, artıkların normal dağılıma uygun olduğunu göstermektedir. Ancak, uç değerlerde (örneğin, "God's Not Dead") bazı sapmalar gözlemlenmiştir.
+- **Scale-Location**: Artıkların kareköklerinin sabit bir varyansa sahip olduğu görülmektedir. Bu da modelin homoskedastisite varsayımını desteklemektedir.
+- **Residuals vs Leverage**: Leverage değerleriyle artıklar arasında belirgin bir ilişki bulunmamaktadır. Ancak, birkaç gözlem (örneğin, "God's Not Dead") uç değer veya etkili gözlem olarak değerlendirilebilir.
+
+
+
+```{r include=FALSE}
+residuals1 <- residuals(final1)
+ks.test(residuals1, "pnorm", mean=mean(residuals1), sd=sd(residuals1))
+```
+Kolmogorov-Smirnov testi sonuçlarına göre, artıkların normal dağılımdan anlamlı bir sapma göstermediği yönündeki null hipotez reddedilememiştir (\( D = 0.06019, p = 0.6201 \)).
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(Hmisc)
+library(car)
+library(lmtest)
+
+bptest(final1)
+vif(final1)
+```
+## Breusch-Pagan Testi
+Breusch-Pagan testi sonuçlarına göre, hata terimlerinin sabit varyansa sahip olduğu (homoskedastisite) yönündeki null hipotez reddedilememiştir (\( BP = 3.8452, df = 5, p = 0.5719 \)).
+
+## VIF (Variance Inflation Factor)
+Modeldeki VIF (Variance Inflation Factor) değerleri sırasıyla; **Ratings: 1.06**, **Budget: 1.92**, **Screens: 1.79**, **SequelBased: 1.13**, ve **Interaction_Score: 1.13** olarak hesaplanmıştır. Tüm değerlerin hem 3'ten hem de 5'ten küçük olması, değişkenler arasında anlamlı bir multikolinerite olmadığını göstermektedir.
+
+##  Outlier Analizi
+
+```{r echo=FALSE}
+# Standart artıkları (Standardized Residuals) hesaplama
+st.res <- final1$residuals / sd(final1$residuals)
+
+# Leverage değerlerini hesaplama
+hat_values <- hatvalues(final1)
+
+# Ortalama leverage değeri
+mean_hat <- mean(hat_values)
+plot(hat_values, st.res)
+abline(h = c(-3, 3), v = 2 * mean_hat)
+# Alanın dışında kalan gözlemleri bulma
+outliers <- which(hat_values > 2 * mean_hat & (st.res < -3 | st.res > 3))
+potential_outliers  <- which(hat_values > 2 * mean_hat | (st.res < -3 | st.res > 3))
+length(potential_outliers)
+length(which(cooks.distance(final1) > 4 / (length(train_pca_data$Gross ) - 2)))
+par(mfrow=c(1,1))
+plot(train_pca_data$Gross,cooks.distance(final1))
+abline(h=4/(length(train_pca_data$Gross)-2))
+which((cooks.distance(final1) > 4 / (length(train_pca_data$Gross) - 2)) & (hat_values > 2 * mean(hat_values) | (st.res < -3 | st.res > 3)))
+```
+Yapılan analizde iki farklı kriter kullanılarak gözlemler incelenmiştir:
+
+1. **Outliers**: 
+   - **Leverage (\( > 2 \times \text{ortalama leverage} \))** ve **standart artıklar (\( |z| > 3 \))** koşullarını aynı anda sağlayan gözlemler **outlier** olarak değerlendirilmiştir.
+   - Ancak, yapılan analizde bu iki koşulu birden sağlayan **herhangi bir gözlem bulunmamıştır**. Yani, kesin bir aykırı değer (outlier) tespit edilmemiştir.
+
+2. **Potential Outliers**:
+   - **Leverage (\( > 2 \times \text{ortalama leverage} \))** veya **standart artıklar (\( |z| > 3 \))** koşullarından herhangi birini sağlayan gözlemler **potansiyel aykırı değer (potential outlier)** olarak değerlendirilmiştir.
+   - Bu kriterlere göre **12 adet potansiyel aykırı gözlem tespit edilmiştir**.
+
+3. **Cook's Distance ile Değerlendirme**:
+   - Tespit edilen potansiyel aykırı değerler arasından, **Cook's Distance (\( > \frac{4}{n - p - 1} \))** kriterine göre değerlendirilmiş ve bu metriklere göre **etkin gözlemler** belirlenmiştir.
+   - Bu kriterlere göre **9 adet etkin gözlem tespit edilmiştir**.
+
+   - Potansiyel aykırı değerlerden yalnızca **Cook's Distance** kriterini sağlayanlar hem potensiyel outlier gözlem olarak hem de etkin gözlem olarak tespit edilmiştir.
+
+### Sonuç:
+Bu iki kriterin kesişimine düşen gözlemler şu şekildedir:
+- **"Winter's Tale" (20 numara)**
+- **"Night at the Museum: Secret of the Tomb" (28 numara)**
+- **"Fifty Shades of Grey" (51 numara)**
+- **"Taken 3" (61 numara)**
+- **"Paul Blart: Mall Cop 2" (77 numara)**
+
+Bu gözlemler, model üzerinde etkili olabilecek noktalar olarak belirlenmiştir. Ancak, kesin bir aykırı değer bulunmadığı için bu gözlemler veriden çıkarılmamıştır.
+
+
+
+## Final Modeli Değerlendirmesi ve Geliştirilecek Noktalar
+
+### Model Performansı
+- Model, hem **train** hem de **test verisinde** güçlü açıklayıcılık oranları sağlamaktadır. **R-squared** değerleri, train verisinde %69.91, test verisinde %72.64 olarak hesaplanmıştır.
+- **Adjusted R-squared** değerlerinin, **R-squared** ile tutarlı ve birbirine yakın olması, modelde gereksiz değişken olmadığını göstermektedir.
+- **PRESS değeri** (1,254,016), modelin genelleme kabiliyetinin makul bir seviyede olduğunu işaret etmektedir.
+- Artıkların normal dağılım ve sabit varyans varsayımları, yapılan **Kolmogorov-Smirnov** ve **Breusch-Pagan** testleri ile doğrulanmıştır.
+
+### Modelin Güçlü Yanları
+- Tüm katsayıların anlamlı olduğu tespit edilmiştir (p < 0.001) ve **Interaction_Score** değişkeni de %90 güven düzeyinde anlamlıdır.
+- **VIF (Variance Inflation Factor)** değerlerinin 3 ve 5’in altında olması, modelin multikolineriteden arınmış olduğunu göstermektedir.
+- Artıkların normal dağılım göstermesi ve homoskedastisite varsayımlarının sağlanması, modelin istatistiksel açıdan uygun olduğunu desteklemektedir.
+
+### Geliştirilecek Noktalar
+- **Cp değeri** ideal olan 5’ten yüksek (**9.59**) çıkmıştır. Bu, modelin aşırı karmaşık olabileceğini ve bazı durumlarda overfitting riski taşıyabileceğini göstermektedir.
+- Özellikle **Interaction_Score**’un %90 güven düzeyinde anlamlı olması, bu bileşenin etkisinin daha dikkatli analiz edilmesi gerektiğini işaret etmektedir.
+- **Prediction interval**’ların geniş olması, modelin bireysel tahminler üzerinde yüksek belirsizliğe sahip olabileceğini göstermektedir. Bu durum, modelin daha fazla veri ile desteklenerek iyileştirilebileceğini işaret eder.
+- **Sentiment** değişkeni, hiçbir modelde anlamlı bir etki göstermemiştir. Ayrıca, negatif değerlere sahip olması, **Gross** ile düşük korelasyonu ve açıklama gücünün olmaması, bu değişkenin yanlış veya hatalı değerler barındırabileceğini işaret edebilir. Bu durum, sentiment skorlarının domain bilgisi ile yeniden ele alınması gerektiğini ortaya koymaktadır. Özellikle sentiment analizindeki yöntemlerin gözden geçirilmesi veya farklı metrikler kullanılarak yeniden değerlendirilmesi faydalı olacaktır.
+- Verinin yalnızca belirli bağımsız değişkenlerine PCA uygulanması, diğer değişkenlerin etkilerinin göz ardı edilmesine veya bazı ilişkilerin modelde eksik temsil edilmesine yol açabilir. Bu, özellikle PCA ile boyut indirgeme yapılmış **Interaction_Score** bileşeninin, bağımlı değişken (`Gross`) ile olan doğrusal ilişkisini eksik veya yanıltıcı bir şekilde temsil edebileceğini göstermektedir.
+
+### Genel Sonuç
+Final model, gişe hasılatı (`Gross`) değişkenini yüksek bir doğrulukla açıklamaktadır. Ancak, modelin genelleme kabiliyetini artırmak için özellikle **Interaction_Score** bileşeni ve sentiment değişkeni üzerinde daha dikkatli bir analiz yapılmalıdır. Sentiment değişkeninin negatif değerleri ve düşük korelasyonu, bu parametrenin yanlış değerlendirildiği ihtimalini artırmaktadır. Ayrıca, verinin yalnızca seçili parametreler üzerinden PCA uygulanarak işlenmesinin sebep olabileceği eksikliklerin detaylı şekilde incelenmesi, gelecekteki modellerin daha sağlam temellerle geliştirilmesini sağlayacaktır. Prediction interval’ların daraltılması ve bireysel tahminlerdeki belirsizliklerin azaltılması hedeflenebilir.
+.
+
+## Final Modeli ile Yeni Gözlem Değerleri Tahminleme
+```{r include=FALSE}
+summary(train_pca_data[, c("Ratings", "Budget", "Screens", "SequelBased", "Interaction_Score", "Gross")])
+```
+Bu kod, veri setindeki değişkenlerin medyan, maksimum ve minimum değerlerini kullanarak tahmin için yeni bir veri çerçevesi oluşturur. **`Ratings`**, **`Budget`**, ve **`Screens`** değişkenlerinin maksimum değerleri alınırken, `Interaction_Score` değişkeni ile `Gross` arasında ters orantı olduğu için, bu durumda `Interaction_Score`'un minimum değeri seçilmiştir. Benzer şekilde, minimum kombinasyonda diğer değişkenler minimum alınırken, `Interaction_Score`'un maksimum değeri atanmıştır. **`SequelBased`** kategorik değişkeni, sırasıyla `"Not Sequel Based"` ve `"Sequel Based"` olarak atanmıştır.
+
+```{r echo=TRUE}
+# Her takım için ortalamaları hesaplayan veri çerçevesi oluşturma (tam sayıya yuvarlama)
+new_data <- data.frame(
+  Ratings = c(round(median(train_pca_data$Ratings)), max(train_pca_data$Ratings), min(train_pca_data$Ratings)),
+  Budget = c(round(median(train_pca_data$Budget)), max(train_pca_data$Budget), min(train_pca_data$Budget)),
+  Screens = c(round(median(train_pca_data$Screens)), max(train_pca_data$Screens), min(train_pca_data$Screens)),
+  SequelBased = c("Not Sequel Based", "Sequel Based", "Not Sequel Based"),
+  Interaction_Score = c(round(median(train_pca_data$Interaction_Score)), min(train_pca_data$Interaction_Score), max(train_pca_data$Interaction_Score))
+)
+
+# Sonuçları kontrol et
+print(new_data)
+```
+```{r echo=FALSE}
+# Confidence interval tahminleri
+confidence_predictions <- predict(
+  final1, 
+  newdata = new_data, 
+  interval = "confidence", 
+  level = 0.95
+)
+
+# Prediction interval tahminleri
+prediction_predictions <- predict(
+  final1, 
+  newdata = new_data, 
+  interval = "prediction", 
+  level = 0.95
+)
+
+# Kolonları düzenleme: Confidence ve Prediction Interval ayrı sütunlar olarak
+results <- cbind(
+  conf_fit = confidence_predictions[, "fit"],
+  conf_lwr = confidence_predictions[, "lwr"],
+  conf_upr = confidence_predictions[, "upr"],
+  pred_fit = prediction_predictions[, "fit"],
+  pred_lwr = prediction_predictions[, "lwr"],
+  pred_upr = prediction_predictions[, "upr"]
+)
+
+# Confidence ve Prediction Interval farklarını hesaplama
+results <- as.data.frame(results) %>%
+  mutate(
+    conf_diff = conf_upr - conf_lwr, # Confidence interval farkı
+    pred_diff = pred_upr - pred_lwr  # Prediction interval farkı
+  )
+
+# Sonuçları görmek için
+print(results)
+```
+Bu analizde, model kullanılarak **confidence interval** (güven aralığı) ve **prediction interval** (tahmin aralığı) hesaplamaları yapılmıştır. Üç farklı gözlem (medyan, maksimum ve minimum kombinasyonları) için `Gross` hedef değişkeninin tahmin edilen değerleri ve aralıkları şu şekilde özetlenmiştir:
+
+### Sonuçlar
+1. **Confidence Interval (Güven Aralığı)**:
+   - **`conf_lwr` ve `conf_upr`**: Modelin ortalama tahmini için alt ve üst sınırlar belirlenmiştir. İlk gözlemde güven aralığı oldukça dar (**38.09** birim), diğer gözlemlerde ise genişleme gözlemlenmiştir.
+   - Güven aralığı, ortalama tahminin model üzerindeki belirsizliğini yansıtır.
+
+2. **Prediction Interval (Tahmin Aralığı)**:
+   - **`pred_lwr` ve `pred_upr`**: Bağımsız değişkenlerin aynı değerlerine sahip bireyler için tahmin edilen bireysel değerlerin aralıklarını ifade eder. Bu aralıklar, bireysel varyasyonları içerdiği için güven aralığından daha geniştir. Örneğin, ilk gözlemde tahmin aralığı **348.44** birim genişliktedir.
+
+3. **Farkların İncelenmesi**:
+   - **`conf_diff` ve `pred_diff`**: Confidence ve prediction interval genişlikleri arasındaki farkları hesaplamak için kullanılmıştır. Prediction interval her durumda daha geniştir, çünkü bireysel varyasyonları da içermektedir.
+
+### Gözlem Bazlı Değerlendirme
+- **1. Gözlem (Medyan Kombinasyonu)**:
+  - Tahmini değer: **375.69**.
+  - Confidence interval: **[356.64, 394.73]**.
+  - Prediction interval: **[201.47, 549.91]**.
+  - Güven aralığı dar iken, tahmin aralığı oldukça geniştir.
+
+- **2. Gözlem (Maksimum Kombinasyonu)**:
+  - Tahmini değer: **710.71**.
+  - Confidence interval: **[653.36, 768.06]**.
+  - Prediction interval: **[528.29, 893.14]**.
+  - Hem confidence hem de prediction interval genişlikleri daha büyüktür.
+
+- **3. Gözlem (Minimum Kombinasyonu)**:
+  - Tahmini değer: **-43.59**.
+  - Confidence interval: **[-105.02, 17.84]**.
+  - Prediction interval: **[-227.34, 140.16]**.
+  - Bu gözlemde hem güven hem de tahmin aralıkları daha geniştir ve negatif değerler içerir.
+
+### Sonuç
+- **Confidence interval** dar olduğu için modelin ortalama tahminine olan güven yüksektir.
+- **Prediction interval**, bireysel varyasyonları içerdiği için her zaman daha geniştir.
+- Maksimum ve minimum kombinasyonlarda daha geniş aralıklar gözlemlenmiştir, bu da uç değerlerin model üzerindeki etkisini yansıtır.
+
+

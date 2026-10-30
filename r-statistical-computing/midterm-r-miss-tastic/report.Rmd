@@ -1,0 +1,203 @@
+---
+title: "R-miss-tastic"
+author: |
+  Tarık Tuna Taşaltı  
+date: "`2025/01/06`"
+documentclass: ctexart
+output: 
+  rticles::ctex:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+lang: "tr"
+header-includes:
+  - \usepackage[margin=2.5cm, top=3cm, bottom=3cm]{geometry}
+keywords: 
+---
+
+#  **Bağlam ve Motivasyon**
+
+Eksik veri, veri toplama süreçlerinde sıkça karşılaşılan bir sorun olup, anketlere yanıt verilmemesi, ölçüm cihazlarının arızalanması veya bazı bilgilerin kaydedilmemesi gibi nedenlerle ortaya çıkar. Büyük veri çağında, verilerin hızla artması ve farklı kaynaklardan gelmesi bu sorunun etkisini daha da artırmaktadır. Eksik veri problemini çözmek için yaygın bir yöntem olan eksik gözlemleri dışlama, bilgi kaybına ve yanlı tahminlere neden olabilir.
+
+Son yıllarda eksik veri analizine yönelik yöntemlerin çeşitliliği artmıştır. Model tabanlı yaklaşımlar, tekli veya çoklu imputasyon yöntemleri ve ağırlıklandırma gibi teknikler geliştirilmiştir. Ancak, her duruma uyan tek bir çözüm yoktur; doğru yöntem, analiz amacı, veri türü ve eksik veri desenine bağlıdır.
+
+**R**, eksik veri analizi için en geniş çözümleri sunan platformlardan biridir. **270'ten fazla CRAN paketi**, eksik verilerle başa çıkmak için araçlar sunar. Öne çıkan paketler arasında:
+
+- Görselleştirme için: `naniar`, `VIM`, `MissingDataGUI`,
+- İmputasyon için: `mice`, `Amelia`, `mi`,
+- Karmaşık veri türleri için: `missMDA`, `MixedDataImpute`.
+
+Ancak eksik veri genellikle pratikte uygun şekilde ele alınmamaktadır. Bunun nedenleri arasında:
+
+- Çözümlerin çeşitliliği nedeniyle doğru yöntemi seçmenin zorluğu,
+- Eksik veri analizinin istatistik ve veri bilimi müfredatlarında yeterince ele alınmaması yer alır.
+
+Bu zorlukları aşmak için **R-miss-tastic** platformu geliştirilmiştir. **R-miss-tastic**, yukarıda belirtilen R paketlerinden farklı olarak eksik veri analizi için yalnızca bir araç sunmakla kalmaz, aynı zamanda:
+
+- Eksik veri problemlerine dair tüm araçları ve materyalleri organize eder,
+- Keşifsel veri analizinden tahmine, modelleme süreçlerinden yorumlamaya kadar tam bir iş akışı rehberi sağlar,
+- Öğretici materyaller, iş akışları ve kapsamlı kütüphaneleri bir araya getirerek kullanıcıların en uygun yöntemi seçmelerine rehberlik eder.
+
+R-miss-tastic’in ayırt edici yönü, eksik veri analizine dair bütünsel bir yaklaşım sunarak R topluluğu içinde eksik veri analizi için bir referans noktası oluşturmasıdır. Bu platform, kullanıcıları yalnızca belirli bir araca yönlendirmekle kalmaz; aynı zamanda eksik veri sorunlarını ele alırken geniş bir rehberlik sağlar ve R topluluğunda eksik veri yönetimi için merkezi bir kaynak oluşturur.
+
+# Platformun Yapısı ve İçeriği
+
+**R-miss-tastic platformu** (https://rmisstastic.netlify.com/) eksik veri analizi için kapsamlı bir referans kaynağı olarak tasarlanmıştır. Platform, `blogdown` R paketi ile oluşturulmuş ve GitHub üzerinden açık kaynaklı olarak erişime sunulmuştur (https://github.com/R-miss-tastic). Platform, hem R hem de Python’da eksik veri analizi üzerine iş akışları, ders materyalleri ve diğer kaynaklar sunar.
+
+## Eksik Veri İş Akışları
+
+Bu iş akışları, eksik veri ile klasik analizlerin pratik uygulamalarını sağlar. Hem simüle edilmiş verilerde hem de gerçek dünyadan alınmış veri setlerinde kullanılabilir. Başlıca konular şunlardır:
+- **Eksik verileri nasıl oluşturabilirsiniz?** Eksik veri mekanizmalarını simüle etmek için yöntemler.
+- **Eksik verilerle istatistiksel çıkarım nasıl yapılır?** Doğrusal ve lojistik regresyon parametrelerinin tahmini (maksimum likelihood, çoklu imputasyon).
+- **Eksik değerler nasıl doldurulur?** Tekli imputasyon/matris tamamlama yöntemlerinin karşılaştırılması.
+- **Eksik verilerle nasıl tahmin yapılır?** Eksik değişkenler içeren veriyle tahmin modellerinin (ör. rastgele ormanlar) oluşturulması.
+
+
+## Eksik Veri Dersleri
+Platform, eksik veri analiziyle ilgili öğretici materyalleri bir araya getirir. Dersler, beş ana başlık altında toplanmıştır:
+1. **Genel Dersler**: Eksik veri mekanizmaları, görselleştirme, keşif analizi ve teorik temeller.
+2. **Çoklu İmputasyon**: Popüler yöntemlerin tanıtımı ve uygulama sınırları.
+3. **Temel Bileşen Yöntemleri**: Düşük dereceli yapılarla görselleştirme, imputasyon ve tahmin.
+4. **Spesifik Veri ve Uygulama Türleri**: Zaman serileri, anketler ve nedensel çıkarım gibi alt problemler.
+5. **Uygulamalar**: R ve Python paketlerinin fonksiyonları ve örnek kullanımları.
+
+## Eksik Veri Bibliyografyası
+Platform, eksik veri mekanizmalarını ve analiz yöntemlerini kapsayan geniş bir literatür taraması sunar. Kullanıcılar, yayın türüne, yıla ve yazar adına göre arama yapabilir veya araştırma alanlarına göre düzenlenmiş bir içerik listesi üzerinden rehberlik alabilir.
+
+## Eksik Veri Uygulamaları
+Platform, eksik veri analizi için mevcut R paketlerini kategorilere ayırarak tanıtır. Öne çıkan paketler arasında `mice`, `missForest`, `naniar` ve `VIM` bulunmaktadır. Her paket için kullanım alanları, istatistikler ve uygulama örnekleri detaylandırılmıştır.
+
+**R-miss-tastic**, eksik veri analizine dair kapsamlı bir rehber sunarak hem teorik hem de pratik yönleriyle bu alanda merkezi bir kaynak olmayı hedefler.
+
+
+# **Eksik Veri İş Akışlarının Detayları**
+
+R-miss-tastic platformu, eksik veri analizi için farklı iş akışları sunar. Bu iş akışları, uygulamalı öğretici materyaller ve hemen kullanılabilir çözümler içerir. HTML, PDF, R Markdown ve IPython Notebook formatlarında sunulan iş akışları, kullanıcıların analizlerini uyarlamasını ve geliştirmesini teşvik eder.
+
+Eksik veri analizi için temel adımlar:
+1. **Açıklayıcı analiz**: Görselleştirme paketleri (ör. `VIM`, `naniar`) ile eksik veri desenlerini anlamak.
+2. **Belirli bir hedef seçmek**: Parametre tahmini, imputasyon veya tahmin gibi spesifik bir yöntem belirlemek.
+
+Ortalama ile doldurma gibi yöntemler, tahmin için uygun olabilirken parametre tahmini için önerilmez. Bu doğrultuda, iş akışları istatistiksel analizin amacına göre düzenlenmiştir. Platformda şu anda **7 iş akışı** bulunmaktadır:
+
+
+## **1. Eksik Veriler Nasıl Üretilebilir?**
+
+Bu iş akışının amacı, eksik verileri farklı mekanizmalar altında üretmek için işlevler sunmaktır. Eksik veri mekanizmaları şunlardır:
+
+- **MCAR (Missing Completely at Random)**: Eksik veri, tamamen rastgele oluşur ve diğer veri değerlerinden bağımsızdır.
+- **MAR (Missing at Random)**: Eksik veri oluşumu, yalnızca gözlemlenen değerlere bağlıdır.
+- **MNAR (Missing Not at Random)**: Eksik veri oluşumu, eksik değişkenlerin kendisine bağlıdır.
+
+### **R'da Eksik Veri Üretimi**
+R iş akışında, `produce_NA` fonksiyonu kullanılarak eksik veri üretimi yapılır. Bu fonksiyon:
+
+- Eksik verileri hem eksiksiz veri setlerinde (tüm değişkenlerin tamamen gözlemlendiği durumlar) hem de halihazırda eksik veriler içeren veri setlerinde üretebilir.
+- Kullanıcıların eksik veri oranını ve mekanizmasını belirlemesine olanak tanır.
+- Çıktı olarak eksik veriler içeren yeni bir veri matrisi ve eksik verilerin konumlarını gösteren bir gösterge matrisi sağlar.
+
+MAR mekanizmasında eksik veri üretmek için iki seçenek vardır:
+1. Lojistik model kullanılarak eksik veri oluşturmak.
+2. Gözlemlenen ve eksik değişkenlerin kombinasyonlarını belirleyen bir desen matrisi kullanmak.
+
+MNAR mekanizması için daha karmaşık yöntemler sunulmuştur. Örneğin, "self-masked" yöntemi ile eksik veriler, yalnızca eksik değişkenlerin kendisine bağlı olacak şekilde üretilebilir.
+
+## **2. Eksik Değerleri Nasıl Doldurulabilir?**
+
+Bu iş akışının amacı, eksik veri doldurma (imputasyon) yöntemlerini karşılaştırmak ve simüle edilmiş veya gerçek veri setleri üzerinde kullanılabilecek bir referans iş akışı sunmaktır. Yöntemlerin ana amacı, eksik değerleri doldurarak en iyi şekilde tamamlanmış bir veri seti elde etmektir. Karşılaştırmalar, doldurma kalitesini ölçmek için **Ortalama Kare Hata (MSE)** kullanılarak yapılır.
+
+### **Doldurma Süreci**
+
+1. Eksiksiz bir veri setine erişim sağlanır.
+2. Veri setine eksik değerler eklenir ve eksik veri seti oluşturulur.
+3. Bu eksik veri seti, farklı yöntemlerle doldurularak tamamlanmış bir veri seti elde edilir.
+4. Doldurulan verilerin orijinal veriyle farkı ölçülerek MSE hesaplanır.
+
+Bu süreç hem simüle edilmiş veri setlerinde hem de mevcut eksik veri içeren gerçek veri setlerinde uygulanabilir.
+
+
+### **Doldurma Yöntemleri**
+
+- **Ortalama ile Doldurma**: Basit ve temel bir yöntemdir, ancak genellikle daha az etkili sonuçlar verir.
+- **Koşullu Modeller**: Diğer değişkenlere bağlı koşullu beklentiler veya dağılımlara göre doldurma yapılır.
+  - **R için**:
+    - `mice`: Zincirleme denklemlerle çoklu doldurma yöntemi.
+    - `missForest`: Rastgele ormanlar kullanılarak iteratif doldurma yöntemi.
+  - **Düşük Dereceli Modeller**: Veri matrisinin düşük dereceli bir yapı ve hata terimi varsayımıyla doldurulması.
+    - `softImpute`: Çekirdek normunu minimize eden bir yöntem.
+    - `missMDA`: Karma normlar (ℓ1 ve ℓ2) ile cezalandırılmış hatayı minimize eder.
+
+
+### **R'da Doldurma İş Akışı**
+
+- **`how_to_impute` Fonksiyonu**: Simüle edilmiş veri setlerinde farklı eksik veri mekanizmaları ve oranları için yöntemleri karşılaştırır.
+  - Örneğin, %10, %30 ve %50 eksik veri oranlarıyla, MCAR, MAR ve MNAR mekanizmaları altında yöntemler değerlendirilir.
+  - Sonuçlar, eksik veri mekanizmalarına ve oranlarına göre MSE ortalamalarını sağlar (Şekil 5'te görüldüğü gibi).
+  - MNAR mekanizması altında, yöntemlerin performansı genellikle basit ortalama doldurma yöntemine yakındır.
+
+- **`how_to_impute_real` Fonksiyonu**: Gerçek veri setleri üzerinde aynı doldurma yöntemlerini karşılaştırır.
+  - Örneğin, UCI veri setlerinde (winequality, slump, movement, decathlon), %20 MCAR eksik veri eklenerek farklı doldurma yöntemleri kıyaslanmıştır (Şekil 6'ya bakınız).
+
+## 3. Eksik Değerlerle Parametre Tahmini Nasıl Yapılır?
+
+Bu R iş akışı, çok değişkenli normal veriler için doğrusal ve lojistik regresyon parametrelerini tahmin etmeyi amaçlayan özel bir çıkarımsal çerçeveye odaklanır. Python'da benzer bir uygulama olmadığından bu yöntem yalnızca R için mevcuttur.
+
+Eksik verilerle parametre tahmini için iki ana yöntem vardır:
+1. **Maksimum Likelihood Tahmini (MLE - Maximum Likelihood Estimation)**: Eksik verilere uyarlanmış EM tabanlı algoritmalar kullanır (ör. misaem paketi).
+2. **Çoklu İmputasyon (Multiple Imputation)**: Eksik değerleri mantıklı değerlerle doldurarak birden fazla tamamlanmış veri seti oluşturur ve her bir veri setinde ilgili parametreyi tahmin eder (ör. mice paketi).
+
+### **MLE ve misaem Paketi**
+- **misaem** paketi, doğrusal ve lojistik regresyon parametrelerini eksik verilerle tahmin etmek için **Stokastik Yaklaşım EM algoritmasını (SAEM - Stochastic Approximation of Expectation-Maximization)** kullanır.
+- Parametrelerin tahminlerini ve varyanslarını sağlar.
+- `miss.lm` ve `miss.glm` fonksiyonları, `lm` ve `glm` standart fonksiyonlarına benzer şekilde çalışır.
+
+### **Çoklu İmputasyon ve Rubin’in Kuralları**
+- Çoklu imputasyon yöntemi, eksik değerleri doldurarak birden fazla tamamlanmış veri seti oluşturur.
+- Her veri setinde ilgili parametre tahmin edilir ve bu tahminlerin varyansları hesaplanır.
+- Rubin’in Kuralları (Rubin's Rules) kullanılarak tahminler birleştirilir ve eksik değerlerden kaynaklanan belirsizlik dikkate alınarak nihai tahmin elde edilir.
+
+### **Kapsam ve Kullanım**
+Bu iş akışında, MLE (Maksimum Likelihood Tahmini) ile çoklu imputasyon yöntemlerini karşılaştırır ve eksik değişken verileriyle doğrusal veya lojistik regresyon modellerinin parametre tahminlerini yapacak temel kod örneklerini sunar. Bu yöntemler MAR (Missing at Random) mekanizması altında geçerlidir.
+
+### **Örnek ve Uygulama**
+Eksik verilerle regresyon parametrelerini tahmin etmeye yönelik bir örnek, Julie Josse’un eksik verilerle ilgili R rehberinde detaylı şekilde ele alınmıştır. Bu rehber, eksik veri desenlerinin görselleştirilmesi, boyut indirgeme ve regresyon gibi süreçleri kapsamaktadır.
+
+
+## 4. Eksik Verilerle Tahmin Nasıl Yapılır?
+
+Eksik veri ile tahmin yöntemleri, parametre tahmini yöntemlerinden farklıdır. Bu iş akışı, eksik değişkenlerle hedef değişkenin nasıl tahmin edileceğini inceler. Josse ve arkadaşlarının (2019) çalışması, eksik verilerle denetimli öğrenme problemini ele alır ve eksik değerler içeren veri setleriyle tahmin yapmak için yöntemler önerir. 
+
+### **Tahmin Yöntemleri**
+1. **İki Aşamalı Strateji**:
+   - Eğitim ve test setlerindeki eksik değerler aynı imputasyon yöntemiyle doldurulur (örneğin, ortalama ile).
+   - Bu tamamlanmış veri setleri üzerinde standart öğrenme algoritmaları (rastgele ormanlar, gradient boosting, doğrusal regresyon) uygulanır.
+
+2. **Tek Aşamalı Strateji (MIA - Missing Incorporated in Attributes)**:
+   - Eksik veriler için özel olarak uyarlanmış yöntemler kullanılır.
+   - Eksik değerlerin doğrudan modellenmesini sağlar ve imputasyon gerektirmez.
+
+### **R'da Uygulama**
+- **İki Aşamalı Strateji**: Eğitim ve test setleri bağımsız olarak aynı imputasyon yöntemiyle doldurulur. Popüler R paketleri (`mice`, `missForest`, `softImpute`, `mean`) bu amaçla kullanılır.
+- **Gelişmeler**: `mice` paketine yapılan son eklemelerle, eğitim ve test setleri için aynı imputasyon modelinin kullanılması sağlanmıştır.
+
+
+### **Performans Karşılaştırması**
+- **`score_pred` Fonksiyonu**: Eksik değer mekanizmaları (MCAR, MNAR) altında farklı stratejilerin tahmin performansını karşılaştırır.
+   - **Veri Seti**: Simüle edilmiş veri setine %20 eksik değer eklenir.
+   - **Yöntemler**: Doğrusal regresyon, rastgele ormanlar, gradient boosting gibi algoritmalar kullanılır.
+   - **Kriterler**: Tahmin performansı, sürekli sonuçlar için Ortalama Kare Hata (MSE), ikili sonuçlar için AUC ile değerlendirilir.
+
+### **Sonuçlar**
+- Doğrusal regresyon için, iki aşamalı strateji MCAR ve MNAR mekanizmaları altında iyi sonuçlar verir.
+- MNAR mekanizması için, tek aşamalı MIA stratejisi (özellikle gradient boosting ile) etkili bir seçenek olarak öne çıkar.
+
+![Şekil 7](plot.png)
+
+### **Şekil 7'nin İncelemesi**
+- Şekil 7, eksik veri mekanizmalarına (MCAR, MNAR) ve algoritmalara göre (doğrusal regresyon, rastgele ormanlar, gradient boosting) tahmin performansını göstermektedir.
+- **Mavi Kutular**: Tahmin hatalarını temsil eder; sonuçlar ne kadar "1"e yakınsa, tahmin o kadar doğrudur.
+
+
+# Kaynakça
+
+1. R-miss-tastic. *Lectures on Missing Data Analysis.* Erişim: [https://rmisstastic.netlify.app/lectures/](https://rmisstastic.netlify.app/lectures/)
